@@ -42,4 +42,3 @@ def extract_text(image_path):
 
     return ocr_output
 
-extract_text("samples/receipt_1.jpg")
