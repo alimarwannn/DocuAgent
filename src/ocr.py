@@ -33,10 +33,16 @@ def extract_text(image_path):
     raw_text = "\n".join(text_lines)
 
     confidence_scores = []
+    high_confidence_lines = []
+
+    minimum_confidence = 0.50
 
     for detection in ocr_results:
         confidence = detection[2]
         confidence_scores.append(confidence)
+        if confidence >= minimum_confidence:
+            high_confidence_lines.append(detection[1])    
+    high_confidence_text = "\n".join(high_confidence_lines)
 
     if confidence_scores:
         average_confidence = sum(confidence_scores) / len(confidence_scores)
@@ -48,7 +54,8 @@ def extract_text(image_path):
         "detections": ocr_results,
         "line_count": len(text_lines),
         "image_path": image_path,
-        "average_confidence": average_confidence
+        "average_confidence": average_confidence,
+        "high_confidence_text": high_confidence_text
     }
 
 
