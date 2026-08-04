@@ -6,7 +6,15 @@ reader = easyocr.Reader(["en"], gpu=False)
 
 def preprocess_image(image):
     gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    return gray_image
+    resized_image = cv2.resize(
+        gray_image,
+        None,
+        fx=1.5,
+        fy=1.5,
+        interpolation=cv2.INTER_CUBIC
+    )
+    return resized_image
+    
 
 def extract_text(image_path):
     
