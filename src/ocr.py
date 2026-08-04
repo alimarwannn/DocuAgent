@@ -32,17 +32,27 @@ def extract_text(image_path):
         text_lines.append(text)
     raw_text = "\n".join(text_lines)
 
+    confidence_scores = []
 
+    for detection in ocr_results:
+        confidence = detection[2]
+        confidence_scores.append(confidence)
+
+    if confidence_scores:
+        average_confidence = sum(confidence_scores) / len(confidence_scores)
+    else:
+        average_confidence = 0.0
 
     ocr_output = {
         "raw_text": raw_text,
         "detections": ocr_results,
-        "line_count": len(text_lines)
+        "line_count": len(text_lines),
+        "image_path": image_path,
+        "average_confidence": average_confidence
     }
 
-    print("Detected lines:", ocr_output["line_count"])
-    print("\nRaw text:")
-    print(ocr_output["raw_text"])
+
+    
 
 
 
