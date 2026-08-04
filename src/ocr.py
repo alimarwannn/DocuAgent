@@ -17,8 +17,14 @@ def extract_text(image_path):
     print(gray_image.shape)
     logger.info("Grayscale conversion succeeded.")
 
-    reader = easyocr.Reader(["en"])
-    ocr_results = reader.readtext(gray_image)
+    try:
+        reader = easyocr.Reader(["en"])
+        ocr_results = reader.readtext(gray_image)
+        logger.info("OCR completed successfully.")
+
+    except Exception as error:
+        logger.error(f"OCR failed: {error}")
+        return None
 
     text_lines = []
     for result in ocr_results:
