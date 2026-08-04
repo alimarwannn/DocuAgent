@@ -2,6 +2,8 @@ import cv2
 from src.logger import logger
 import easyocr
 
+reader = easyocr.Reader(["en"], gpu=False)
+
 def extract_text(image_path):
     
     image = cv2.imread(image_path)
@@ -18,7 +20,6 @@ def extract_text(image_path):
     logger.info("Grayscale conversion succeeded.")
 
     try:
-        reader = easyocr.Reader(["en"])
         ocr_results = reader.readtext(gray_image)
         logger.info("OCR completed successfully.")
 
