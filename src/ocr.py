@@ -19,14 +19,13 @@ logger.info("Grayscale conversion succeeded.")
 
 reader = easyocr.Reader(["en"])
 ocr_results = reader.readtext(gray_image)
-print(ocr_results)
 
 text_lines = []
 for result in ocr_results:
     bounding_box, text, confidence = result
     text_lines.append(text)
 raw_text = "\n".join(text_lines)
-print(raw_text)
+
 
 
 ocr_output = {
