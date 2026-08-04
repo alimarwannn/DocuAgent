@@ -4,6 +4,10 @@ import easyocr
 
 reader = easyocr.Reader(["en"], gpu=False)
 
+def preprocess_image(image):
+    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    return gray_image
+
 def extract_text(image_path):
     
     image = cv2.imread(image_path)
@@ -15,7 +19,7 @@ def extract_text(image_path):
     logger.info("Image loaded successfully.")
     print(image.shape)
 
-    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray_image = preprocess_image(image)
     print(gray_image.shape)
     logger.info("Grayscale conversion succeeded.")
 
