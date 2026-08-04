@@ -13,7 +13,17 @@ def preprocess_image(image):
         fy=1.5,
         interpolation=cv2.INTER_CUBIC
     )
+    
+
+    #blurred_image = cv2.GaussianBlur(
+     #   resized_image,
+      #  (5, 5),
+       # 0
+    #)
+
     return resized_image
+
+
     
 
 def extract_text(image_path):
