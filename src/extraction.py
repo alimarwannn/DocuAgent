@@ -112,3 +112,34 @@ def validate_extracted_fields(extracted_fields, document_type):
         field: extracted_fields.get(field)
         for field in allowed_fields
     }
+
+def build_partial_scan_prompt(ocr_text, document_type, requested_fields):
+    if document_type == "invoice":
+        allowed_fields = INVOICE_FIELDS
+    elif document_type == "receipt":
+        allowed_fields = RECEIPT_FIELDS
+    else:
+        return None
+
+    valid_fields = [
+        field for field in requested_fields
+        if field in allowed_fields
+    ]
+
+    if not valid_fields:
+        return None
+
+    return f"""
+Extract only the requested fields from this {document_type}.
+
+Return only valid JSON.
+Use exactly these fields:
+{json.dumps(valid_fields)}
+
+Use null when a requested value is missing.
+Do not add extra fields.
+Do not guess values.
+
+OCR text:
+{ocr_text}
+""".strip()
