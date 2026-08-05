@@ -84,3 +84,39 @@ def validate_total_consistency(fields):
         }]
 
     return []
+
+ALLOWED_CURRENCIES = {
+    "EGP",
+    "USD",
+    "EUR",
+    "GBP",
+    "QAR",
+}
+
+
+def validate_currency(fields):
+    if not isinstance(fields, dict):
+        return []
+
+    currency = fields.get("currency")
+
+    if currency in (None, ""):
+        return []
+
+    if not isinstance(currency, str):
+        return [{
+            "issue_type": "invalid_currency",
+            "message": "Currency must be text.",
+            "severity": "error",
+        }]
+
+    normalized_currency = currency.strip().upper()
+
+    if normalized_currency not in ALLOWED_CURRENCIES:
+        return [{
+            "issue_type": "invalid_currency",
+            "message": f"Unsupported currency: {currency}.",
+            "severity": "error",
+        }]
+
+    return []
