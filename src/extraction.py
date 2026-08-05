@@ -214,3 +214,27 @@ def run_partial_scan_from_request(
         document_type,
         requested_fields,
     )
+
+
+def suggest_available_fields(ocr_text, document_type):
+    if not ocr_text:
+        return []
+
+    text = ocr_text.lower()
+
+    if document_type == "invoice":
+        allowed_fields = INVOICE_FIELDS
+    elif document_type == "receipt":
+        allowed_fields = RECEIPT_FIELDS
+    else:
+        return []
+
+    suggested_fields = []
+
+    for field in allowed_fields:
+        readable_name = field.replace("_", " ")
+
+        if field in text or readable_name in text:
+            suggested_fields.append(field)
+
+    return suggested_fields
