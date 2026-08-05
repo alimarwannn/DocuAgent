@@ -28,5 +28,15 @@ def create_tables():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS extracted_fields (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            document_id INTEGER NOT NULL,
+            field_name TEXT NOT NULL,
+            field_value TEXT,
+            FOREIGN KEY (document_id) REFERENCES documents(id)
+        )
+    """)
+
     connection.commit()
     connection.close()
