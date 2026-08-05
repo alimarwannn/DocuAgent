@@ -171,3 +171,27 @@ def run_partial_scan(ocr_text, document_type, requested_fields):
         "scan_mode": "partial",
         "fields": valid_fields,
     }
+
+
+def parse_requested_fields(user_request, document_type):
+    if not user_request:
+        return []
+
+    request_text = user_request.lower()
+
+    if document_type == "invoice":
+        allowed_fields = INVOICE_FIELDS
+    elif document_type == "receipt":
+        allowed_fields = RECEIPT_FIELDS
+    else:
+        return []
+
+    matched_fields = []
+
+    for field in allowed_fields:
+        readable_name = field.replace("_", " ")
+
+        if field in request_text or readable_name in request_text:
+            matched_fields.append(field)
+
+    return matched_fields
