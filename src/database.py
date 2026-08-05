@@ -12,3 +12,21 @@ def get_database_connection():
     connection.row_factory = sqlite3.Row
 
     return connection
+
+def create_tables():
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename TEXT NOT NULL,
+            document_type TEXT NOT NULL,
+            scan_mode TEXT NOT NULL,
+            raw_ocr_text TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    connection.commit()
+    connection.close()
