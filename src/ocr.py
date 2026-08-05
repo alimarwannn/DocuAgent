@@ -4,6 +4,9 @@ import easyocr
 
 reader = easyocr.Reader(["en"], gpu=False)
 
+def correct_rotation(image):
+    return cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
 def preprocess_image(image):
     gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     resized_image = cv2.resize(
@@ -13,7 +16,10 @@ def preprocess_image(image):
         fy=1.5,
         interpolation=cv2.INTER_CUBIC
     )
+
+    # TODO: add rotation correction before returning the processed image
     
+    return resized_image
 
     #blurred_image = cv2.GaussianBlur(
      #   resized_image,
