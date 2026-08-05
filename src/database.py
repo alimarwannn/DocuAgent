@@ -130,3 +130,26 @@ def save_validation_issues(document_id, issues):
 
     connection.commit()
     connection.close()    
+
+def invoice_number_exists(invoice_number):
+    if invoice_number in (None, ""):
+        return False
+
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        SELECT 1
+        FROM extracted_fields
+        WHERE field_name = 'invoice_number'
+          AND field_value = ?
+        LIMIT 1
+        """,
+        (str(invoice_number),),
+    )
+
+    exists = cursor.fetchone() is not None
+    connection.close()
+
+    return exists
