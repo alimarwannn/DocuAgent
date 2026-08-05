@@ -20,18 +20,17 @@ invalid_result = extract_text("src/bolbol.png")
 assert invalid_result is None
 
 print("Average confidence:", result["average_confidence"])
-print("\nHigh-confidence text:")
-print(result["high_confidence_text"])
+#print("\nHigh-confidence text:")
+#print(result["high_confidence_text"])
 if result is not None:
     print("Detected lines:", result["line_count"])
-    print("\nRaw text:")
-    print(result["raw_text"])
+    #print("\nRaw text:")
+    #print(result["raw_text"])
 
 print("receipt 2 avergae confidence:", result_2["average_confidence"])
 print("receipt 2 detected lines", result_2["line_count"])
-print("\n receipt 2 raw text:")
-print(result_2["raw_text"]
-      )
+#print("\n receipt 2 raw text:")
+#print(result_2["raw_text"])
 
 result_rotated = extract_text("samples/receipt_rotated.jpg")
 
@@ -41,25 +40,57 @@ assert "average_confidence" in result
 
 #print("Rotated receipt average confidence:", result_rotated["average_confidence"])
 #print("Rotated receipt detected lines:", result_rotated["line_count"])
-print(result_rotated["raw_text"])
+#print(result_rotated["raw_text"])
 
-#rotated_image = cv2.imread("samples/receipt_rotated.jpg")
-#corrected_image = correct_rotation(rotated_image)
+rotated_image = cv2.imread("samples/receipt_rotated.jpg")
+corrected_image = correct_rotation(rotated_image)
 
-#print("Orignal rotated shape:", rotated_image.shape)
-#print("Corrected shape:", corrected_image.shape)
+print("Orignal rotated shape:", rotated_image.shape)
+print("Corrected shape:", corrected_image.shape)
 
-#corrected_detections = reader.readtext(corrected_image)
+corrected_detections = reader.readtext(corrected_image)
 
-#correction_confidences = [
-#    detection[2] for detection in corrected_detections
-#]
+correction_confidences = [
+    detection[2] for detection in corrected_detections
+]
 
-#corrected_average_confidence = (
-#    sum(correction_confidences) / len(correction_confidences)
-#    if correction_confidences
-#    else 0.0
-#)
+corrected_average_confidence = (
+    sum(correction_confidences) / len(correction_confidences)
+    if correction_confidences
+    else 0.0
+)
 
-#print("Corrected detection count:", len(corrected_detections))
-#print("Corrected average confidence:", corrected_average_confidence)
+print("Corrected detection count:", len(corrected_detections))
+print("Corrected average confidence:", corrected_average_confidence)
+
+rotated_2 = extract_text("samples/receipt2_rotated.jpg")
+
+print("\nAverage confidence:", rotated_2["average_confidence"])
+print("Line count:", rotated_2["line_count"])
+
+test_2_image = cv2.imread("samples/receipt2_rotated.jpg")
+test_2 = correct_rotation(test_2_image)
+
+test_2_detections = reader.readtext(test_2)
+
+test_2_confidences = [
+    detection[2] for detection in test_2_detections
+]
+
+test_2_average_confidence = (
+    sum(test_2_confidences) / len(test_2_confidences)
+    if test_2_confidences
+    else 0.0
+)
+
+print("\nCorrected average confidence:", test_2_average_confidence)
+print("Corrected line count:", len(test_2_detections))
+
+corrected_text = "\n".join(
+    detection[1] for detection in test_2_detections
+)
+
+assert len(test_2_detections) > 0
+assert test_2_average_confidence > rotated_2["average_confidence"]
+#print("\nCorrected OCR text:")
+#print(corrected_text)
