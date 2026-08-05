@@ -1,4 +1,7 @@
 def detect_document_type(ocr_text):
+    if not ocr_text:
+        return "unknown"
+
     text = ocr_text.lower()
 
     if "invoice" in text:
@@ -8,3 +11,4 @@ def detect_document_type(ocr_text):
         return "receipt"
 
     return "unknown"
+
