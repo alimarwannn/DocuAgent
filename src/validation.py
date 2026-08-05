@@ -53,3 +53,34 @@ def validate_positive_amounts(fields):
             })
 
     return issues
+
+def validate_total_consistency(fields):
+    if not isinstance(fields, dict):
+        return []
+
+    subtotal = fields.get("subtotal")
+    tax = fields.get("tax")
+    total = fields.get("total")
+
+    if subtotal is None or tax is None or total is None:
+        return []
+
+    if not all(
+        isinstance(value, (int, float))
+        for value in [subtotal, tax, total]
+    ):
+        return []
+
+    expected_total = subtotal + tax
+
+    if abs(expected_total - total) > 0.01:
+        return [{
+            "issue_type": "total_mismatch",
+            "message": (
+                f"Subtotal plus tax equals {expected_total}, "
+                f"but total is {total}."
+            ),
+            "severity": "error",
+        }]
+
+    return []
