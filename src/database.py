@@ -103,4 +103,30 @@ def save_extracted_fields(document_id, fields):
         )
 
     connection.commit()
+    connection.close()
+
+def save_validation_issues(document_id, issues):
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    for issue in issues:
+        cursor.execute(
+            """
+            INSERT INTO validation_issues (
+                document_id,
+                issue_type,
+                message,
+                severity
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                document_id,
+                issue["issue_type"],
+                issue["message"],
+                issue["severity"],
+            ),
+        )
+
+    connection.commit()
     connection.close()    
