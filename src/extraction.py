@@ -79,19 +79,16 @@ def parse_groq_json(response_text):
 
     cleaned_text = response_text.strip()
 
-    if cleaned_text.startswith("```json"):
-        cleaned_text = cleaned_text[7:]
+    start_index = cleaned_text.find("{")
+    end_index = cleaned_text.rfind("}")
 
-    if cleaned_text.startswith("```"):
-        cleaned_text = cleaned_text[3:]
+    if start_index == -1 or end_index == -1:
+        return None
 
-    if cleaned_text.endswith("```"):
-        cleaned_text = cleaned_text[:-3]
-
-    cleaned_text = cleaned_text.strip()
+    json_text = cleaned_text[start_index:end_index + 1]
 
     try:
-        return json.loads(cleaned_text)
+        return json.loads(json_text)
     except json.JSONDecodeError:
         return None
 
