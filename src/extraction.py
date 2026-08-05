@@ -195,3 +195,22 @@ def parse_requested_fields(user_request, document_type):
             matched_fields.append(field)
 
     return matched_fields
+
+def run_partial_scan_from_request(
+    ocr_text,
+    document_type,
+    user_request,
+):
+    requested_fields = parse_requested_fields(
+        user_request,
+        document_type,
+    )
+
+    if not requested_fields:
+        return None
+
+    return run_partial_scan(
+        ocr_text,
+        document_type,
+        requested_fields,
+    )
