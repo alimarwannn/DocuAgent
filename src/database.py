@@ -79,4 +79,28 @@ def save_document(filename, document_type, scan_mode, raw_ocr_text):
     connection.commit()
     connection.close()
 
-    return document_id    
+    return document_id
+
+def save_extracted_fields(document_id, fields):
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    for field_name, field_value in fields.items():
+        cursor.execute(
+            """
+            INSERT INTO extracted_fields (
+                document_id,
+                field_name,
+                field_value
+            )
+            VALUES (?, ?, ?)
+            """,
+            (
+                document_id,
+                field_name,
+                None if field_value is None else str(field_value),
+            ),
+        )
+
+    connection.commit()
+    connection.close()    
