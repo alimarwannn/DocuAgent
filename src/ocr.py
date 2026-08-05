@@ -21,8 +21,17 @@ def preprocess_image(image):
        # 0
     #)
 
-    return resized_image
+    #threshold_image = cv2.adaptiveThreshold(
+     #   resized_image,
+      #  255,
+       # cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        #cv2.THRESH_BINARY,
+        #11,
+        #2
+    #)
 
+    return resized_image
+    
 
     
 
