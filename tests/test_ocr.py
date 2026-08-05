@@ -1,6 +1,7 @@
 from src.ocr import extract_text
 from src.ocr import correct_rotation
 import cv2
+from src.ocr import extract_text, correct_rotation, reader
 
 
 result = extract_text("samples/receipt_1.jpg")
@@ -42,9 +43,23 @@ assert "average_confidence" in result
 #print("Rotated receipt detected lines:", result_rotated["line_count"])
 print(result_rotated["raw_text"])
 
-rotated_image = cv2.imread("samples/receipt_rotated.jpg")
-corrected_image = correct_rotation(rotated_image)
+#rotated_image = cv2.imread("samples/receipt_rotated.jpg")
+#corrected_image = correct_rotation(rotated_image)
 
-print("Orignal rotated shape:", rotated_image.shape)
-print("Corrected shape:", corrected_image.shape)
+#print("Orignal rotated shape:", rotated_image.shape)
+#print("Corrected shape:", corrected_image.shape)
 
+#corrected_detections = reader.readtext(corrected_image)
+
+#correction_confidences = [
+#    detection[2] for detection in corrected_detections
+#]
+
+#corrected_average_confidence = (
+#    sum(correction_confidences) / len(correction_confidences)
+#    if correction_confidences
+#    else 0.0
+#)
+
+#print("Corrected detection count:", len(corrected_detections))
+#print("Corrected average confidence:", corrected_average_confidence)

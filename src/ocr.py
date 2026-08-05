@@ -5,7 +5,7 @@ import easyocr
 reader = easyocr.Reader(["en"], gpu=False)
 
 def correct_rotation(image):
-    return cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    return cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
 
 def preprocess_image(image):
     gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
