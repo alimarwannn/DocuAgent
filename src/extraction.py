@@ -155,11 +155,9 @@ def run_partial_scan(ocr_text, document_type, requested_fields):
         return None
 
     response_text = ask_groq(prompt)
-    print("RAW PARTIAL RESPONSE:")
-    print(repr(response_text))
+    
     parsed_fields = parse_groq_json(response_text)
-    print("PARSED PARTIAL FIELDS:")
-    print(parsed_fields)
+    
 
     if not isinstance(parsed_fields, dict):
         return None
@@ -238,7 +236,24 @@ def suggest_available_fields(ocr_text, document_type):
     for field in allowed_fields:
         readable_name = field.replace("_", " ")
 
-        if field in text or readable_name in text:
+        if field == "tax":
+            tax_lines = [
+                line.strip()
+                for line in text.splitlines()
+            ]
+
+            if any(
+                line.startswith("tax:")
+                or (
+                    line.startswith("tax ")
+                    and not line.startswith("tax invoice")
+                )
+                or line.startswith("vat")
+                for line in tax_lines
+            ):
+                suggested_fields.append(field)
+
+        elif field in text or readable_name in text:
             suggested_fields.append(field)
 
     return suggested_fields
