@@ -13,11 +13,9 @@ def run_full_scan(ocr_text, document_type):
     if prompt is None:
         return None
     response_text = ask_groq(prompt)
-    print("RAW RESPONSE:")
-    print(repr(response_text))
+    
     parsed_fields = parse_groq_json(response_text)
-    print("PARSED FIELDS:")
-    print(parsed_fields)
+    
 
     validated_fields = validate_extracted_fields(
         parsed_fields,
