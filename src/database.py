@@ -51,3 +51,32 @@ def create_tables():
 
     connection.commit()
     connection.close()
+
+def save_document(filename, document_type, scan_mode, raw_ocr_text):
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO documents (
+            filename,
+            document_type,
+            scan_mode,
+            raw_ocr_text
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            filename,
+            document_type,
+            scan_mode,
+            raw_ocr_text,
+        ),
+    )
+
+    document_id = cursor.lastrowid
+
+    connection.commit()
+    connection.close()
+
+    return document_id    
