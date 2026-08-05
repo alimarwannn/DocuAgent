@@ -143,3 +143,31 @@ Do not guess values.
 OCR text:
 {ocr_text}
 """.strip()
+
+def run_partial_scan(ocr_text, document_type, requested_fields):
+    prompt = build_partial_scan_prompt(
+        ocr_text,
+        document_type,
+        requested_fields,
+    )
+
+    if prompt is None:
+        return None
+
+    response_text = ask_groq(prompt)
+    parsed_fields = parse_groq_json(response_text)
+
+    if not isinstance(parsed_fields, dict):
+        return None
+
+    valid_fields = {
+        field: parsed_fields.get(field)
+        for field in requested_fields
+        if field in parsed_fields
+    }
+
+    return {
+        "document_type": document_type,
+        "scan_mode": "partial",
+        "fields": valid_fields,
+    }
