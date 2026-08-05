@@ -15,9 +15,11 @@ unknown_result = run_full_scan(invoice_text, "unknown")
 
 assert result is not None
 assert isinstance(result, dict)
-assert result["invoice_number"] == "INV-123"
-assert result["total"] == 1140
-assert result["currency"] == "EGP"
+assert result["document_type"] == "invoice"
+assert result["scan_mode"] == "full"
+assert result["fields"]["invoice_number"] == "INV-123"
+assert result["fields"]["total"] == 1140
+assert result["fields"]["currency"] == "EGP"
 assert unknown_result is None
 
 print("Parsed full scan result:")

@@ -1,4 +1,9 @@
-from src.schemas import INVOICE_TEMPLATE, RECEIPT_TEMPLATE
+from src.schemas import (
+    INVOICE_FIELDS,
+    RECEIPT_FIELDS,
+    INVOICE_TEMPLATE,
+    RECEIPT_TEMPLATE,
+)
 from src.groq_client import ask_groq
 
 
@@ -7,13 +12,28 @@ def run_full_scan(ocr_text, document_type):
 
     if prompt is None:
         return None
-
     response_text = ask_groq(prompt)
+    print("RAW RESPONSE:")
+    print(repr(response_text))
+    parsed_fields = parse_groq_json(response_text)
+    print("PARSED FIELDS:")
+    print(parsed_fields)
 
-    print("Raw Groq response:")
-    print(response_text)
+    validated_fields = validate_extracted_fields(
+        parsed_fields,
+        document_type,
+    )
 
-    return parse_groq_json(response_text)
+    if validated_fields is None:
+        return None
+
+    return {
+        "document_type": document_type,
+        "scan_mode": "full",
+        "fields": validated_fields,
+    }
+    
+
 
 
 def create_empty_result(document_type, scan_mode):
@@ -76,4 +96,21 @@ def parse_groq_json(response_text):
         return json.loads(cleaned_text)
     except json.JSONDecodeError:
         return None
-    
+
+
+
+def validate_extracted_fields(extracted_fields, document_type):
+    if not isinstance(extracted_fields, dict):
+        return None
+
+    if document_type == "invoice":
+        allowed_fields = INVOICE_FIELDS
+    elif document_type == "receipt":
+        allowed_fields = RECEIPT_FIELDS
+    else:
+        return None
+
+    return {
+        field: extracted_fields.get(field)
+        for field in allowed_fields
+    }
