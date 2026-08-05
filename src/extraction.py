@@ -155,7 +155,11 @@ def run_partial_scan(ocr_text, document_type, requested_fields):
         return None
 
     response_text = ask_groq(prompt)
+    print("RAW PARTIAL RESPONSE:")
+    print(repr(response_text))
     parsed_fields = parse_groq_json(response_text)
+    print("PARSED PARTIAL FIELDS:")
+    print(parsed_fields)
 
     if not isinstance(parsed_fields, dict):
         return None
