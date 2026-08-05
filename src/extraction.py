@@ -238,3 +238,15 @@ def suggest_available_fields(ocr_text, document_type):
             suggested_fields.append(field)
 
     return suggested_fields
+
+def run_quick_scan(ocr_text, document_type):
+    suggested_fields = suggest_available_fields(
+        ocr_text,
+        document_type,
+    )
+
+    return {
+        "document_type": document_type,
+        "scan_mode": "quick",
+        "fields": suggested_fields,
+    }
