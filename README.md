@@ -156,3 +156,67 @@ Rotation correction significantly improved OCR confidence and recovered importan
 However, the corrected result did not fully match the original upright image quality.
 
 Automatic orientation detection is not implemented yet, so rotation correction currently requires the correct direction to be known.
+
+## Structured Scanning
+
+DocuAgent supports invoice and receipt extraction through three scan modes.
+
+### Full Scan
+
+Extracts every supported field for the detected document type.
+
+Invoice fields:
+
+- supplier name
+- invoice number
+- date
+- customer
+- subtotal
+- tax
+- total
+- currency
+
+Receipt fields:
+
+- merchant name
+- receipt number
+- date
+- subtotal
+- tax
+- total
+- payment method
+- currency
+
+### Partial Scan
+
+Extracts only selected fields.
+
+Users can provide:
+
+- an explicit field list;
+- a natural-language request, such as:
+  `Extract the invoice number, total, and currency.`
+
+Unsupported fields are ignored, and missing values remain `null`.
+
+### Quick Scan
+
+Checks the OCR text and suggests likely available fields before detailed extraction.
+
+### Standard Result Structure
+
+```json
+{
+  "document_type": "invoice",
+  "scan_mode": "full",
+  "fields": {
+    "supplier_name": "Vodafone Egypt",
+    "invoice_number": "INV-123",
+    "date": "2026-08-05",
+    "customer": null,
+    "subtotal": 1000,
+    "tax": 140,
+    "total": 1140,
+    "currency": "EGP"
+  }
+}
