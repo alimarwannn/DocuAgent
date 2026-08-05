@@ -38,5 +38,16 @@ def create_tables():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS validation_issues (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            document_id INTEGER NOT NULL,
+            issue_type TEXT NOT NULL,
+            message TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            FOREIGN KEY (document_id) REFERENCES documents(id)
+        )
+    """)
+
     connection.commit()
     connection.close()
