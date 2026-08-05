@@ -14,11 +14,13 @@ result = run_full_scan(invoice_text, "invoice")
 unknown_result = run_full_scan(invoice_text, "unknown")
 
 assert result is not None
-assert isinstance(result, str)
-assert len(result.strip()) > 0
+assert isinstance(result, dict)
+assert result["invoice_number"] == "INV-123"
+assert result["total"] == 1140
+assert result["currency"] == "EGP"
 assert unknown_result is None
 
-print("Groq response:")
+print("Parsed full scan result:")
 print(result)
 
 print("\nFull scan API test passed.")

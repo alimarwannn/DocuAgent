@@ -8,7 +8,12 @@ def run_full_scan(ocr_text, document_type):
     if prompt is None:
         return None
 
-    return ask_groq(prompt)
+    response_text = ask_groq(prompt)
+
+    print("Raw Groq response:")
+    print(response_text)
+
+    return parse_groq_json(response_text)
 
 
 def create_empty_result(document_type, scan_mode):
