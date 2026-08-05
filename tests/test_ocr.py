@@ -3,6 +3,7 @@ from src.ocr import extract_text
 
 
 result = extract_text("samples/receipt_1.jpg")
+result_2 = extract_text("samples/receipt_2.jpg")
 
 assert result is not None, "OCR returned None for a valid image"
 assert "raw_text" in result
@@ -24,3 +25,8 @@ if result is not None:
     print("\nRaw text:")
     print(result["raw_text"])
 
+print("receipt 2 avergae confidence:", result_2["average_confidence"])
+print("receipt 2 detected lines", result_2["line_count"])
+print("\n receipt 2 raw text:")
+print(result_2["raw_text"]
+      )
