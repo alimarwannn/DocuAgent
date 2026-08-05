@@ -1,4 +1,14 @@
 from src.schemas import INVOICE_TEMPLATE, RECEIPT_TEMPLATE
+from src.groq_client import ask_groq
+
+
+def run_full_scan(ocr_text, document_type):
+    prompt = build_full_scan_prompt(ocr_text, document_type)
+
+    if prompt is None:
+        return None
+
+    return ask_groq(prompt)
 
 
 def create_empty_result(document_type, scan_mode):
