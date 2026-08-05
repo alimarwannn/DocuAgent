@@ -149,3 +149,24 @@ def validate_date(fields):
         }]
 
     return []
+
+def validate_document(fields, document_type):
+    issues = []
+
+    issues.extend(
+        validate_required_fields(fields, document_type)
+    )
+    issues.extend(
+        validate_positive_amounts(fields)
+    )
+    issues.extend(
+        validate_total_consistency(fields)
+    )
+    issues.extend(
+        validate_currency(fields)
+    )
+    issues.extend(
+        validate_date(fields)
+    )
+
+    return issues
