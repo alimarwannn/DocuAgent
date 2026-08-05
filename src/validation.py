@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from src.schemas import (
     INVOICE_REQUIRED_FIELDS,
     RECEIPT_REQUIRED_FIELDS,
@@ -116,6 +118,33 @@ def validate_currency(fields):
         return [{
             "issue_type": "invalid_currency",
             "message": f"Unsupported currency: {currency}.",
+            "severity": "error",
+        }]
+
+    return []
+
+def validate_date(fields):
+    if not isinstance(fields, dict):
+        return []
+
+    date_value = fields.get("date")
+
+    if date_value in (None, ""):
+        return []
+
+    if not isinstance(date_value, str):
+        return [{
+            "issue_type": "invalid_date",
+            "message": "Date must be text in YYYY-MM-DD format.",
+            "severity": "error",
+        }]
+
+    try:
+        datetime.strptime(date_value.strip(), "%Y-%m-%d")
+    except ValueError:
+        return [{
+            "issue_type": "invalid_date",
+            "message": f"Invalid date: {date_value}. Expected YYYY-MM-DD.",
             "severity": "error",
         }]
 
