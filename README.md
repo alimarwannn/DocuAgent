@@ -126,7 +126,7 @@ Average confidence: approximately 0.75
 
 Grayscale and resizing currently perform better than the tested blur and adaptive-thresholding alternatives.
 
-Limitations
+## Limitations
 OCR accuracy depends on image quality, lighting, rotation, and document layout.
 The current pipeline has been tested mainly on one receipt sample.
 Some words and field names may be recognized incorrectly.
@@ -140,3 +140,19 @@ API keys must be stored only in the local .env file.
 API keys must never be written directly inside Python files.
 The .env file must remain excluded from Git.
 No private document data or credentials should be committed to the repository.
+
+## Rotation Test
+
+A known upright receipt was rotated by 90 degrees to measure how orientation affects OCR.
+
+Results:
+
+- Upright receipt average confidence: `0.7999`
+- Rotated receipt average confidence: `0.4053`
+- Corrected receipt average confidence: `0.6829`
+
+Rotation correction significantly improved OCR confidence and recovered important fields such as the receipt number, date, subtotal, tax, and total.
+
+However, the corrected result did not fully match the original upright image quality.
+
+Automatic orientation detection is not implemented yet, so rotation correction currently requires the correct direction to be known.
