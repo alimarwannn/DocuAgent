@@ -6,7 +6,7 @@ scan_result = {
     "scan_mode": "full",
     "fields": {
         "supplier_name": "Vodafone Egypt",
-        "invoice_number": "INV-123",
+        "invoice_number": "SERVICE-VALID-001",
         "date": "2026-08-05",
         "customer": None,
         "subtotal": 1000,
@@ -18,7 +18,7 @@ scan_result = {
 
 saved_result = save_processed_document(
     filename="service_test_invoice.jpg",
-    raw_ocr_text="TAX INVOICE Total: 1140 EGP",
+    raw_ocr_text="TAX INVOICE Invoice No: SERVICE-VALID-001 Total: 1140 EGP",
     scan_result=scan_result,
 )
 
