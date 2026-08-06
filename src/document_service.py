@@ -1,5 +1,6 @@
 from src.database import (
     create_tables,
+    invoice_number_exists,
     save_document,
     save_extracted_fields,
     save_validation_issues,
@@ -31,6 +32,19 @@ def save_processed_document(
         fields,
         document_type,
     )
+
+    if document_type == "invoice":
+        invoice_number = fields.get("invoice_number")
+
+        if invoice_number_exists(invoice_number):
+            issues.append({
+                "issue_type": "duplicate_invoice",
+                "message": (
+                    f"Invoice number {invoice_number} "
+                    "already exists."
+                ),
+                "severity": "warning",
+            })
 
     document_id = save_document(
         filename,
