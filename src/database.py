@@ -153,3 +153,69 @@ def invoice_number_exists(invoice_number):
     connection.close()
 
     return exists
+
+def get_document(document_id):
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM documents
+        WHERE id = ?
+        """,
+        (document_id,),
+    )
+
+    document = cursor.fetchone()
+    connection.close()
+
+    return document
+
+
+def get_document_fields(document_id):
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        SELECT field_name, field_value
+        FROM extracted_fields
+        WHERE document_id = ?
+        """,
+        (document_id,),
+    )
+
+    rows = cursor.fetchall()
+    connection.close()
+
+    return {
+        row["field_name"]: row["field_value"]
+        for row in rows
+    }
+
+
+def get_document_issues(document_id):
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        SELECT issue_type, message, severity
+        FROM validation_issues
+        WHERE document_id = ?
+        """,
+        (document_id,),
+    )
+
+    rows = cursor.fetchall()
+    connection.close()
+
+    return [
+        {
+            "issue_type": row["issue_type"],
+            "message": row["message"],
+            "severity": row["severity"],
+        }
+        for row in rows
+    ]
