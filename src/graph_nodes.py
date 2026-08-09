@@ -3,6 +3,12 @@ from src.ocr import extract_text
 from src.document_type import detect_document_type
 from src.extraction import run_full_scan
 
+
+from src.extraction import (
+    run_full_scan,
+    run_partial_scan_from_request,
+)
+
 def load_node(state: DocumentState):
     image_path = state.get("image_path")
 
@@ -82,6 +88,31 @@ def full_scan_node(state: DocumentState):
     if scan_result is None:
         return {
             "error": "Full scan extraction failed."
+        }
+
+    return {
+        "scan_result": scan_result
+    }
+
+def partial_scan_node(state: DocumentState):
+    raw_ocr_text = state.get("raw_ocr_text")
+    document_type = state.get("document_type")
+    user_request = state.get("user_request")
+
+    if not raw_ocr_text or not document_type or not user_request:
+        return {
+            "error": "Missing data for partial scan."
+        }
+
+    scan_result = run_partial_scan_from_request(
+        raw_ocr_text,
+        document_type,
+        user_request,
+    )
+
+    if scan_result is None:
+        return {
+            "error": "Partial scan extraction failed."
         }
 
     return {

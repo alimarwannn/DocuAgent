@@ -11,3 +11,4 @@ class DocumentState(TypedDict, total=False):
     validation_issues: list[dict]
     document_id: int
     error: Optional[str]
+    user_request: str

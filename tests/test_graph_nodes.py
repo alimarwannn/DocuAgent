@@ -4,6 +4,7 @@ from src.graph_nodes import (
     document_type_node,
     scan_mode_router,
     full_scan_node,
+    partial_scan_node,
 )
 
 valid_state = {
@@ -83,3 +84,29 @@ assert missing_full_scan_result["error"] == (
 )
 
 print("Full scan node tests passed.")
+
+partial_scan_state = {
+    "raw_ocr_text": """
+    TAX INVOICE
+    Invoice No: GRAPH-002
+    Total: 500 EGP
+    """,
+    "document_type": "invoice",
+    "user_request": "Extract the invoice number and total.",
+}
+
+partial_scan_result = partial_scan_node(partial_scan_state)
+
+assert "scan_result" in partial_scan_result
+assert partial_scan_result["scan_result"]["document_type"] == "invoice"
+assert partial_scan_result["scan_result"]["scan_mode"] == "partial"
+assert partial_scan_result["scan_result"]["fields"]["invoice_number"] == "GRAPH-002"
+assert partial_scan_result["scan_result"]["fields"]["total"] == 500
+
+missing_partial_result = partial_scan_node({})
+
+assert missing_partial_result["error"] == (
+    "Missing data for partial scan."
+)
+
+print("Partial scan node tests passed.")
