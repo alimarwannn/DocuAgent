@@ -9,6 +9,12 @@ from src.extraction import (
     run_partial_scan_from_request,
 )
 
+from src.extraction import (
+    run_full_scan,
+    run_partial_scan_from_request,
+    run_quick_scan,
+)
+
 def load_node(state: DocumentState):
     image_path = state.get("image_path")
 
@@ -114,6 +120,24 @@ def partial_scan_node(state: DocumentState):
         return {
             "error": "Partial scan extraction failed."
         }
+
+    return {
+        "scan_result": scan_result
+    }
+
+def quick_scan_node(state: DocumentState):
+    raw_ocr_text = state.get("raw_ocr_text")
+    document_type = state.get("document_type")
+
+    if not raw_ocr_text or not document_type:
+        return {
+            "error": "Missing data for quick scan."
+        }
+
+    scan_result = run_quick_scan(
+        raw_ocr_text,
+        document_type,
+    )
 
     return {
         "scan_result": scan_result

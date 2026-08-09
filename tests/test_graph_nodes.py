@@ -5,6 +5,7 @@ from src.graph_nodes import (
     scan_mode_router,
     full_scan_node,
     partial_scan_node,
+    quick_scan_node,
 )
 
 valid_state = {
@@ -110,3 +111,30 @@ assert missing_partial_result["error"] == (
 )
 
 print("Partial scan node tests passed.")
+
+quick_scan_state = {
+    "raw_ocr_text": """
+    TAX INVOICE
+    Invoice Number: GRAPH-003
+    Date: 2026-08-09
+    Total: 700 EGP
+    """,
+    "document_type": "invoice",
+}
+
+quick_scan_result = quick_scan_node(quick_scan_state)
+
+assert "scan_result" in quick_scan_result
+assert quick_scan_result["scan_result"]["document_type"] == "invoice"
+assert quick_scan_result["scan_result"]["scan_mode"] == "quick"
+assert "invoice_number" in quick_scan_result["scan_result"]["fields"]
+assert "date" in quick_scan_result["scan_result"]["fields"]
+assert "total" in quick_scan_result["scan_result"]["fields"]
+
+missing_quick_result = quick_scan_node({})
+
+assert missing_quick_result["error"] == (
+    "Missing data for quick scan."
+)
+
+print("Quick scan node tests passed.")
