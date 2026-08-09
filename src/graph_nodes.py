@@ -1,7 +1,7 @@
 from src.state import DocumentState
 from src.ocr import extract_text
 from src.document_type import detect_document_type
-
+from src.extraction import run_full_scan
 
 def load_node(state: DocumentState):
     image_path = state.get("image_path")
@@ -64,3 +64,26 @@ def scan_mode_router(state: DocumentState):
         return "quick"
 
     return "error"
+
+def full_scan_node(state: DocumentState):
+    raw_ocr_text = state.get("raw_ocr_text")
+    document_type = state.get("document_type")
+
+    if not raw_ocr_text or not document_type:
+        return {
+            "error": "Missing data for full scan."
+        }
+
+    scan_result = run_full_scan(
+        raw_ocr_text,
+        document_type,
+    )
+
+    if scan_result is None:
+        return {
+            "error": "Full scan extraction failed."
+        }
+
+    return {
+        "scan_result": scan_result
+    }

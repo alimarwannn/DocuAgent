@@ -3,6 +3,7 @@ from src.graph_nodes import (
     ocr_node,
     document_type_node,
     scan_mode_router,
+    full_scan_node,
 )
 
 valid_state = {
@@ -54,3 +55,31 @@ assert scan_mode_router({"scan_mode": "invalid"}) == "error"
 assert scan_mode_router({}) == "error"
 
 print("Scan mode router tests passed.")
+
+full_scan_state = {
+    "raw_ocr_text": """
+    TAX INVOICE
+    Supplier: Vodafone Egypt
+    Invoice No: GRAPH-001
+    Date: 2026-08-09
+    Subtotal: 1000
+    Tax: 140
+    Total: 1140 EGP
+    """,
+    "document_type": "invoice",
+}
+
+full_scan_result = full_scan_node(full_scan_state)
+
+assert "scan_result" in full_scan_result
+assert full_scan_result["scan_result"]["document_type"] == "invoice"
+assert full_scan_result["scan_result"]["scan_mode"] == "full"
+assert full_scan_result["scan_result"]["fields"]["invoice_number"] == "GRAPH-001"
+
+missing_full_scan_result = full_scan_node({})
+
+assert missing_full_scan_result["error"] == (
+    "Missing data for full scan."
+)
+
+print("Full scan node tests passed.")
