@@ -1,5 +1,6 @@
 from src.state import DocumentState
 from src.ocr import extract_text
+from src.document_type import detect_document_type
 
 
 def load_node(state: DocumentState):
@@ -13,6 +14,7 @@ def load_node(state: DocumentState):
     return {
         "image_path": image_path
     }
+
 
 def ocr_node(state: DocumentState):
     image_path = state.get("image_path")
@@ -32,3 +34,33 @@ def ocr_node(state: DocumentState):
     return {
         "raw_ocr_text": ocr_result["raw_text"]
     }
+
+
+def document_type_node(state: DocumentState):
+    raw_ocr_text = state.get("raw_ocr_text")
+
+    if not raw_ocr_text:
+        return {
+            "error": "Cannot detect document type without OCR text."
+        }
+
+    document_type = detect_document_type(raw_ocr_text)
+
+    return {
+        "document_type": document_type
+    }
+
+
+def scan_mode_router(state: DocumentState):
+    scan_mode = state.get("scan_mode")
+
+    if scan_mode == "full":
+        return "full"
+
+    if scan_mode == "partial":
+        return "partial"
+
+    if scan_mode == "quick":
+        return "quick"
+
+    return "error"
