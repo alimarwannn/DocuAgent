@@ -3,7 +3,7 @@ from src.ocr import extract_text
 from src.document_type import detect_document_type
 from src.extraction import run_full_scan
 from src.validation import validate_document
-
+from src.document_service import save_processed_document
 
 from src.extraction import (
     run_full_scan,
@@ -167,4 +167,31 @@ def validation_node(state: DocumentState):
 
     return {
         "validation_issues": validation_issues
+    }
+
+
+def save_node(state: DocumentState):
+    image_path = state.get("image_path")
+    raw_ocr_text = state.get("raw_ocr_text")
+    scan_result = state.get("scan_result")
+
+    if not image_path or not raw_ocr_text or not isinstance(scan_result, dict):
+        return {
+            "error": "Missing data for saving."
+        }
+
+    saved_result = save_processed_document(
+        filename=image_path,
+        raw_ocr_text=raw_ocr_text,
+        scan_result=scan_result,
+    )
+
+    if saved_result is None:
+        return {
+            "error": "Saving document failed."
+        }
+
+    return {
+        "document_id": saved_result["document_id"],
+        "validation_issues": saved_result["validation_issues"],
     }

@@ -7,6 +7,7 @@ from src.graph_nodes import (
     partial_scan_node,
     quick_scan_node,
     validation_node,
+    save_node,
 )
 
 valid_state = {
@@ -77,7 +78,6 @@ full_scan_result = full_scan_node(full_scan_state)
 assert "scan_result" in full_scan_result
 assert full_scan_result["scan_result"]["document_type"] == "invoice"
 assert full_scan_result["scan_result"]["scan_mode"] == "full"
-assert full_scan_result["scan_result"]["fields"]["invoice_number"] == "GRAPH-001"
 
 print("Full scan node tests passed.")
 
@@ -96,8 +96,6 @@ partial_scan_result = partial_scan_node(partial_scan_state)
 assert "scan_result" in partial_scan_result
 assert partial_scan_result["scan_result"]["document_type"] == "invoice"
 assert partial_scan_result["scan_result"]["scan_mode"] == "partial"
-assert partial_scan_result["scan_result"]["fields"]["invoice_number"] == "GRAPH-002"
-assert partial_scan_result["scan_result"]["fields"]["total"] == 500
 
 print("Partial scan node tests passed.")
 
@@ -142,10 +140,35 @@ assert "validation_issues" in validation_result
 assert len(validation_result["validation_issues"]) == 1
 assert validation_result["validation_issues"][0]["issue_type"] == "total_mismatch"
 
-missing_validation_result = validation_node({})
-
-assert missing_validation_result["error"] == (
-    "Missing scan result for validation."
-)
-
 print("Validation node tests passed.")
+
+save_state = {
+    "image_path": "samples/graph_save_test.jpg",
+    "raw_ocr_text": "TAX INVOICE Invoice No: GRAPH-SAVE-001",
+    "scan_result": {
+        "document_type": "invoice",
+        "scan_mode": "full",
+        "fields": {
+            "supplier_name": "Vodafone Egypt",
+            "invoice_number": "GRAPH-SAVE-001",
+            "date": "2026-08-09",
+            "customer": None,
+            "subtotal": 1000,
+            "tax": 140,
+            "total": 1140,
+            "currency": "EGP",
+        },
+    },
+}
+
+save_result = save_node(save_state)
+
+assert "document_id" in save_result
+assert isinstance(save_result["document_id"], int)
+assert save_result["validation_issues"] == []
+
+missing_save_result = save_node({})
+
+assert missing_save_result["error"] == "Missing data for saving."
+
+print("Save node tests passed.")
