@@ -2,6 +2,7 @@ from src.state import DocumentState
 from src.ocr import extract_text
 from src.document_type import detect_document_type
 from src.extraction import run_full_scan
+from src.validation import validate_document
 
 
 from src.extraction import (
@@ -141,4 +142,29 @@ def quick_scan_node(state: DocumentState):
 
     return {
         "scan_result": scan_result
+    }
+
+def validation_node(state: DocumentState):
+    scan_result = state.get("scan_result")
+
+    if not isinstance(scan_result, dict):
+        return {
+            "error": "Missing scan result for validation."
+        }
+
+    document_type = scan_result.get("document_type")
+    fields = scan_result.get("fields")
+
+    if not document_type or not isinstance(fields, dict):
+        return {
+            "error": "Invalid scan result for validation."
+        }
+
+    validation_issues = validate_document(
+        fields,
+        document_type,
+    )
+
+    return {
+        "validation_issues": validation_issues
     }
