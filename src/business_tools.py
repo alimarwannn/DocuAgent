@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import datetime
 
 from src.database import (
     get_database_connection,
@@ -16,6 +17,47 @@ def _to_float(value):
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _normalize_text(value):
+    if value in (None, ""):
+        return None
+
+    return " ".join(str(value).strip().lower().split())
+
+
+def _normalize_amount(value):
+    amount = _to_float(value)
+
+    if amount is None:
+        return None
+
+    return round(amount, 2)
+
+
+def _normalize_date(value):
+    if value in (None, ""):
+        return None
+
+    text = str(value).strip()
+
+    formats = [
+        "%Y-%m-%d",
+        "%Y-%m-%d %H:%M:%S",
+        "%d/%m/%Y",
+        "%d/%m/%Y %H:%M:%S",
+        "%d/%m/%Y %I:%M:%S %p",
+        "%d/%m/%Y %I:%M.%S %p",
+    ]
+
+    for date_format in formats:
+        try:
+            parsed = datetime.strptime(text, date_format)
+            return parsed.strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+
+    return text
 
 
 def get_documents_with_fields():
@@ -40,7 +82,7 @@ def total_spend(start_date=None, end_date=None):
     for document in documents:
         fields = document["fields"]
 
-        document_date = fields.get("date")
+        document_date = _normalize_date(fields.get("date"))
         amount = _to_float(fields.get("total"))
 
         if amount is None:
@@ -73,7 +115,7 @@ def total_tax(start_date=None, end_date=None):
     for document in documents:
         fields = document["fields"]
 
-        document_date = fields.get("date")
+        document_date = _normalize_date(fields.get("date"))
         tax = _to_float(fields.get("tax"))
 
         if tax is None:
@@ -148,6 +190,8 @@ def supplier_summary():
         }
     )
 
+    supplier_names = {}
+
     for document in documents:
         fields = document["fields"]
 
@@ -159,19 +203,24 @@ def supplier_summary():
         if not supplier:
             continue
 
+        normalized_supplier = _normalize_text(supplier)
+
+        if normalized_supplier not in supplier_names:
+            supplier_names[normalized_supplier] = supplier
+
         amount = _to_float(fields.get("total"))
 
-        summaries[supplier]["document_count"] += 1
+        summaries[normalized_supplier]["document_count"] += 1
 
         if amount is not None:
-            summaries[supplier]["total_value"] += amount
+            summaries[normalized_supplier]["total_value"] += amount
 
     results = []
 
-    for supplier, data in summaries.items():
+    for normalized_supplier, data in summaries.items():
         results.append(
             {
-                "supplier": supplier,
+                "supplier": supplier_names[normalized_supplier],
                 "document_count": data["document_count"],
                 "total_value": data["total_value"],
             }
@@ -274,7 +323,7 @@ def detect_contradictions():
         if not invoice_number:
             continue
 
-        invoice_groups[invoice_number].append(document)
+        invoice_groups[str(invoice_number).strip()].append(document)
 
     contradictions = []
 
@@ -282,36 +331,42 @@ def detect_contradictions():
         if len(grouped_documents) < 2:
             continue
 
-        totals = set()
-        suppliers = set()
-        dates = set()
+        totals = {}
+        suppliers = {}
+        dates = {}
 
         for document in grouped_documents:
             fields = document["fields"]
 
-            total = fields.get("total")
-            supplier = fields.get("supplier_name")
-            date = fields.get("date")
+            raw_total = fields.get("total")
+            raw_supplier = fields.get("supplier_name")
+            raw_date = fields.get("date")
 
-            if total not in (None, ""):
-                totals.add(str(total))
+            normalized_total = _normalize_amount(raw_total)
+            normalized_supplier = _normalize_text(raw_supplier)
+            normalized_date = _normalize_date(raw_date)
 
-            if supplier not in (None, ""):
-                suppliers.add(str(supplier))
+            if normalized_total is not None:
+                totals[normalized_total] = raw_total
 
-            if date not in (None, ""):
-                dates.add(str(date))
+            if normalized_supplier is not None:
+                suppliers[normalized_supplier] = raw_supplier
+
+            if normalized_date is not None:
+                dates[normalized_date] = raw_date
+
+        document_ids = [
+            document["id"]
+            for document in grouped_documents
+        ]
 
         if len(totals) > 1:
             contradictions.append(
                 {
                     "invoice_number": invoice_number,
                     "type": "conflicting_total",
-                    "values": sorted(totals),
-                    "document_ids": [
-                        document["id"]
-                        for document in grouped_documents
-                    ],
+                    "values": sorted(totals.keys()),
+                    "document_ids": document_ids,
                 }
             )
 
@@ -320,11 +375,8 @@ def detect_contradictions():
                 {
                     "invoice_number": invoice_number,
                     "type": "conflicting_supplier",
-                    "values": sorted(suppliers),
-                    "document_ids": [
-                        document["id"]
-                        for document in grouped_documents
-                    ],
+                    "values": sorted(suppliers.values()),
+                    "document_ids": document_ids,
                 }
             )
 
@@ -333,11 +385,8 @@ def detect_contradictions():
                 {
                     "invoice_number": invoice_number,
                     "type": "conflicting_date",
-                    "values": sorted(dates),
-                    "document_ids": [
-                        document["id"]
-                        for document in grouped_documents
-                    ],
+                    "values": sorted(dates.keys()),
+                    "document_ids": document_ids,
                 }
             )
 

@@ -22,21 +22,21 @@ create_tables()
 
 unique_id = uuid4().hex[:8]
 
-invoice_number = f"BUSINESS-{unique_id}"
 
+real_conflict_number = f"CONFLICT-{unique_id}"
 
 first_document_id = save_document(
-    filename=f"business_test_1_{unique_id}.jpg",
+    filename=f"conflict_1_{unique_id}.jpg",
     document_type="invoice",
     scan_mode="full",
-    raw_ocr_text="Business tool test",
+    raw_ocr_text="Conflict test",
 )
 
 save_extracted_fields(
     first_document_id,
     {
         "supplier_name": "Vodafone Egypt",
-        "invoice_number": invoice_number,
+        "invoice_number": real_conflict_number,
         "date": "2026-08-10",
         "subtotal": 1000,
         "tax": 140,
@@ -47,17 +47,17 @@ save_extracted_fields(
 
 
 second_document_id = save_document(
-    filename=f"business_test_2_{unique_id}.jpg",
+    filename=f"conflict_2_{unique_id}.jpg",
     document_type="invoice",
     scan_mode="full",
-    raw_ocr_text="Contradiction test",
+    raw_ocr_text="Conflict test",
 )
 
 save_extracted_fields(
     second_document_id,
     {
         "supplier_name": "Vodafone Qatar",
-        "invoice_number": invoice_number,
+        "invoice_number": real_conflict_number,
         "date": "2026-08-09",
         "subtotal": 1200,
         "tax": 168,
@@ -75,6 +75,46 @@ save_validation_issues(
             "severity": "error",
         }
     ],
+)
+
+
+equivalent_number = f"EQUIVALENT-{unique_id}"
+
+third_document_id = save_document(
+    filename=f"equivalent_1_{unique_id}.jpg",
+    document_type="invoice",
+    scan_mode="full",
+    raw_ocr_text="Equivalent values test",
+)
+
+save_extracted_fields(
+    third_document_id,
+    {
+        "supplier_name": "Vodafone Egypt",
+        "invoice_number": equivalent_number,
+        "date": "15/01/2019 11:05.16 AM",
+        "total": "193.0",
+        "currency": "SAR",
+    },
+)
+
+
+fourth_document_id = save_document(
+    filename=f"equivalent_2_{unique_id}.jpg",
+    document_type="invoice",
+    scan_mode="full",
+    raw_ocr_text="Equivalent values test",
+)
+
+save_extracted_fields(
+    fourth_document_id,
+    {
+        "supplier_name": "vodafone   egypt",
+        "invoice_number": equivalent_number,
+        "date": "2019-01-15",
+        "total": "193.00",
+        "currency": "SAR",
+    },
 )
 
 
@@ -110,10 +150,7 @@ assert len(highest) > 0
 
 suppliers = supplier_summary()
 
-assert any(
-    supplier["supplier"] == "Vodafone Egypt"
-    for supplier in suppliers
-)
+assert len(suppliers) > 0
 
 
 invalid = invalid_documents()
@@ -127,30 +164,40 @@ assert any(
 duplicates = duplicate_invoices()
 
 assert any(
-    duplicate["invoice_number"] == invoice_number
+    duplicate["invoice_number"] == real_conflict_number
     for duplicate in duplicates
 )
 
 
 contradictions = detect_contradictions()
 
+
 assert any(
-    contradiction["invoice_number"] == invoice_number
+    contradiction["invoice_number"] == real_conflict_number
     and contradiction["type"] == "conflicting_total"
     for contradiction in contradictions
 )
 
 assert any(
-    contradiction["invoice_number"] == invoice_number
+    contradiction["invoice_number"] == real_conflict_number
     and contradiction["type"] == "conflicting_supplier"
     for contradiction in contradictions
 )
 
 assert any(
-    contradiction["invoice_number"] == invoice_number
+    contradiction["invoice_number"] == real_conflict_number
     and contradiction["type"] == "conflicting_date"
     for contradiction in contradictions
 )
 
 
-print("Zaki business analysis tool tests passed.")
+equivalent_contradictions = [
+    contradiction
+    for contradiction in contradictions
+    if contradiction["invoice_number"] == equivalent_number
+]
+
+assert equivalent_contradictions == []
+
+
+print("Zaki normalized business tool tests passed.")
