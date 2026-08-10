@@ -20,7 +20,7 @@ def ask_groq(prompt):
                 messages=[user_message],
                 #model="invalid-model",
                 model="llama-3.1-8b-instant",
-                max_tokens=200,
+                max_tokens=500,
             )            
             logger.info("Received response from Groq API.")
             return response.choices[0].message.content                      

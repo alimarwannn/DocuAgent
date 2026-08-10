@@ -1,20 +1,17 @@
 from src.state import DocumentState
 from src.ocr import extract_text
 from src.document_type import detect_document_type
-from src.extraction import run_full_scan
-from src.validation import validate_document
-from src.document_service import save_processed_document
-
-from src.extraction import (
-    run_full_scan,
-    run_partial_scan_from_request,
-)
 
 from src.extraction import (
     run_full_scan,
     run_partial_scan_from_request,
     run_quick_scan,
 )
+
+from src.normalization import normalize_fields
+from src.validation import validate_scan_result
+from src.document_service import save_processed_document
+
 
 def load_node(state: DocumentState):
     image_path = state.get("image_path")
@@ -54,10 +51,21 @@ def document_type_node(state: DocumentState):
 
     if not raw_ocr_text:
         return {
-            "error": "Cannot detect document type without OCR text."
+            "error": (
+                "Cannot detect document type "
+                "without OCR text."
+            )
         }
 
-    document_type = detect_document_type(raw_ocr_text)
+    document_type = detect_document_type(
+        raw_ocr_text
+    )
+
+    if document_type == "unknown":
+        return {
+            "document_type": "unknown",
+            "error": "Unsupported document type.",
+        }
 
     return {
         "document_type": document_type
@@ -65,6 +73,9 @@ def document_type_node(state: DocumentState):
 
 
 def scan_mode_router(state: DocumentState):
+    if state.get("error"):
+        return "error"
+
     scan_mode = state.get("scan_mode")
 
     if scan_mode == "full":
@@ -78,6 +89,14 @@ def scan_mode_router(state: DocumentState):
 
     return "error"
 
+
+def error_router(state: DocumentState):
+    if state.get("error"):
+        return "error"
+
+    return "continue"
+
+
 def full_scan_node(state: DocumentState):
     raw_ocr_text = state.get("raw_ocr_text")
     document_type = state.get("document_type")
@@ -87,10 +106,15 @@ def full_scan_node(state: DocumentState):
             "error": "Missing data for full scan."
         }
 
-    scan_result = run_full_scan(
-        raw_ocr_text,
-        document_type,
-    )
+    try:
+        scan_result = run_full_scan(
+            raw_ocr_text,
+            document_type,
+        )
+    except Exception as error:
+        return {
+            "error": f"Full scan extraction failed: {error}"
+        }
 
     if scan_result is None:
         return {
@@ -101,21 +125,31 @@ def full_scan_node(state: DocumentState):
         "scan_result": scan_result
     }
 
+
 def partial_scan_node(state: DocumentState):
     raw_ocr_text = state.get("raw_ocr_text")
     document_type = state.get("document_type")
     user_request = state.get("user_request")
 
-    if not raw_ocr_text or not document_type or not user_request:
+    if (
+        not raw_ocr_text
+        or not document_type
+        or not user_request
+    ):
         return {
             "error": "Missing data for partial scan."
         }
 
-    scan_result = run_partial_scan_from_request(
-        raw_ocr_text,
-        document_type,
-        user_request,
-    )
+    try:
+        scan_result = run_partial_scan_from_request(
+            raw_ocr_text,
+            document_type,
+            user_request,
+        )
+    except Exception as error:
+        return {
+            "error": f"Partial scan extraction failed: {error}"
+        }
 
     if scan_result is None:
         return {
@@ -125,6 +159,7 @@ def partial_scan_node(state: DocumentState):
     return {
         "scan_result": scan_result
     }
+
 
 def quick_scan_node(state: DocumentState):
     raw_ocr_text = state.get("raw_ocr_text")
@@ -144,29 +179,96 @@ def quick_scan_node(state: DocumentState):
         "scan_result": scan_result
     }
 
+
+def normalization_node(state: DocumentState):
+    scan_result = state.get("scan_result")
+
+    if not isinstance(scan_result, dict):
+        return {
+            "error": (
+                "Missing scan result for normalization."
+            )
+        }
+
+    fields = scan_result.get("fields")
+
+    if not isinstance(fields, dict):
+        return {
+            "error": (
+                "Invalid fields for normalization."
+            )
+        }
+
+    normalized_result = scan_result.copy()
+
+    normalized_result["fields"] = normalize_fields(
+        fields,
+        state.get("raw_ocr_text"),
+    )
+
+    return {
+        "scan_result": normalized_result
+    }
+
+
 def validation_node(state: DocumentState):
     scan_result = state.get("scan_result")
 
     if not isinstance(scan_result, dict):
         return {
-            "error": "Missing scan result for validation."
+            "error": (
+                "Missing scan result for validation."
+            )
         }
 
-    document_type = scan_result.get("document_type")
+    document_type = scan_result.get(
+        "document_type"
+    )
+
+    scan_mode = scan_result.get(
+        "scan_mode"
+    )
+
     fields = scan_result.get("fields")
 
-    if not document_type or not isinstance(fields, dict):
+    if (
+        not document_type
+        or not scan_mode
+        or not isinstance(fields, dict)
+    ):
         return {
-            "error": "Invalid scan result for validation."
+            "error": (
+                "Invalid scan result for validation."
+            )
         }
 
-    validation_issues = validate_document(
+    validation_issues = validate_scan_result(
         fields,
         document_type,
+        scan_mode,
     )
 
     return {
         "validation_issues": validation_issues
+    }
+
+
+def review_router(state: DocumentState):
+    issues = state.get(
+        "validation_issues",
+        [],
+    )
+
+    for issue in issues:
+        if issue.get("severity") == "error":
+            return "review"
+
+    return "save"
+
+
+def human_review_node(state: DocumentState):
+    return {
+        "needs_human_review": True
     }
 
 
@@ -175,7 +277,11 @@ def save_node(state: DocumentState):
     raw_ocr_text = state.get("raw_ocr_text")
     scan_result = state.get("scan_result")
 
-    if not image_path or not raw_ocr_text or not isinstance(scan_result, dict):
+    if (
+        not image_path
+        or not raw_ocr_text
+        or not isinstance(scan_result, dict)
+    ):
         return {
             "error": "Missing data for saving."
         }
@@ -192,6 +298,10 @@ def save_node(state: DocumentState):
         }
 
     return {
-        "document_id": saved_result["document_id"],
-        "validation_issues": saved_result["validation_issues"],
+        "document_id": (
+            saved_result["document_id"]
+        ),
+        "validation_issues": (
+            saved_result["validation_issues"]
+        ),
     }

@@ -5,7 +5,8 @@ from src.database import (
     save_extracted_fields,
     save_validation_issues,
 )
-from src.validation import validate_document
+
+from src.validation import validate_scan_result
 
 
 def save_processed_document(
@@ -20,7 +21,10 @@ def save_processed_document(
     scan_mode = scan_result.get("scan_mode")
     fields = scan_result.get("fields")
 
-    if not document_type or not scan_mode:
+    if not document_type:
+        return None
+
+    if not scan_mode:
         return None
 
     if not isinstance(fields, dict):
@@ -28,23 +32,29 @@ def save_processed_document(
 
     create_tables()
 
-    issues = validate_document(
+    validation_issues = validate_scan_result(
         fields,
         document_type,
+        scan_mode,
     )
 
     if document_type == "invoice":
         invoice_number = fields.get("invoice_number")
 
-        if invoice_number_exists(invoice_number):
-            issues.append({
-                "issue_type": "duplicate_invoice",
-                "message": (
-                    f"Invoice number {invoice_number} "
-                    "already exists."
-                ),
-                "severity": "warning",
-            })
+        if (
+            invoice_number
+            and invoice_number_exists(invoice_number)
+        ):
+            validation_issues.append(
+                {
+                    "issue_type": "duplicate_invoice",
+                    "message": (
+                        f"Invoice number {invoice_number} "
+                        "already exists."
+                    ),
+                    "severity": "warning",
+                }
+            )
 
     document_id = save_document(
         filename,
@@ -60,10 +70,10 @@ def save_processed_document(
 
     save_validation_issues(
         document_id,
-        issues,
+        validation_issues,
     )
 
     return {
         "document_id": document_id,
-        "validation_issues": issues,
+        "validation_issues": validation_issues,
     }

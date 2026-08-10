@@ -6,66 +6,82 @@ from src.schemas import (
 )
 
 
-def validate_required_fields(fields, document_type):
-    if not isinstance(fields, dict):
-        return []
+ALLOWED_CURRENCIES = {
+    "EGP",
+    "USD",
+    "EUR",
+    "GBP",
+    "QAR",
+    "SAR",
+}
 
+
+def validate_required_fields(fields, document_type):
     if document_type == "invoice":
         required_fields = INVOICE_REQUIRED_FIELDS
     elif document_type == "receipt":
         required_fields = RECEIPT_REQUIRED_FIELDS
     else:
-        return []
+        return [
+            {
+                "issue_type": "unknown_document_type",
+                "message": f"Unsupported document type: {document_type}",
+                "severity": "error",
+            }
+        ]
 
     issues = []
 
     for field in required_fields:
-        if fields.get(field) in (None, ""):
-            issues.append({
-                "issue_type": "missing_field",
-                "message": f"Required field {field} is missing.",
-                "severity": "error",
-            })
+        value = fields.get(field)
+
+        if value is None or value == "":
+            issues.append(
+                {
+                    "issue_type": "missing_field",
+                    "message": f"Required field {field} is missing.",
+                    "severity": "error",
+                }
+            )
 
     return issues
 
-def validate_positive_amounts(fields):
-    if not isinstance(fields, dict):
-        return []
 
+def validate_positive_amounts(fields):
     issues = []
 
-    for field in ["subtotal", "tax", "total"]:
-        value = fields.get(field)
+    for field_name in ["subtotal", "tax", "total"]:
+        value = fields.get(field_name)
 
         if value is None:
             continue
 
         if not isinstance(value, (int, float)):
-            issues.append({
-                "issue_type": "invalid_amount",
-                "message": f"Field {field} must be numeric.",
-                "severity": "error",
-            })
-        elif value < 0:
-            issues.append({
-                "issue_type": "invalid_amount",
-                "message": f"Field {field} cannot be negative.",
-                "severity": "error",
-            })
+            issues.append(
+                {
+                    "issue_type": "invalid_amount",
+                    "message": f"Field {field_name} must be numeric.",
+                    "severity": "error",
+                }
+            )
+            continue
+
+        if value < 0:
+            issues.append(
+                {
+                    "issue_type": "invalid_amount",
+                    "message": f"Field {field_name} cannot be negative.",
+                    "severity": "error",
+                }
+            )
 
     return issues
 
-def validate_total_consistency(fields):
-    if not isinstance(fields, dict):
-        return []
 
+def validate_total_consistency(fields):
     subtotal = fields.get("subtotal")
     tax = fields.get("tax")
     total = fields.get("total")
-
-    if subtotal is None or tax is None or total is None:
-        return []
 
     if not all(
         isinstance(value, (int, float))
@@ -76,97 +92,103 @@ def validate_total_consistency(fields):
     expected_total = subtotal + tax
 
     if abs(expected_total - total) > 0.01:
-        return [{
-            "issue_type": "total_mismatch",
-            "message": (
-                f"Subtotal plus tax equals {expected_total}, "
-                f"but total is {total}."
-            ),
-            "severity": "error",
-        }]
+        return [
+            {
+                "issue_type": "total_mismatch",
+                "message": (
+                    f"Subtotal plus tax is {expected_total}, "
+                    f"but total is {total}."
+                ),
+                "severity": "error",
+            }
+        ]
 
     return []
-
-ALLOWED_CURRENCIES = {
-    "EGP",
-    "USD",
-    "EUR",
-    "GBP",
-    "QAR",
-}
 
 
 def validate_currency(fields):
-    if not isinstance(fields, dict):
-        return []
-
     currency = fields.get("currency")
 
-    if currency in (None, ""):
+    if currency is None or currency == "":
         return []
 
-    if not isinstance(currency, str):
-        return [{
-            "issue_type": "invalid_currency",
-            "message": "Currency must be text.",
-            "severity": "error",
-        }]
-
-    normalized_currency = currency.strip().upper()
-
-    if normalized_currency not in ALLOWED_CURRENCIES:
-        return [{
-            "issue_type": "invalid_currency",
-            "message": f"Unsupported currency: {currency}.",
-            "severity": "error",
-        }]
+    if currency not in ALLOWED_CURRENCIES:
+        return [
+            {
+                "issue_type": "invalid_currency",
+                "message": f"Unsupported currency: {currency}.",
+                "severity": "error",
+            }
+        ]
 
     return []
+
 
 def validate_date(fields):
-    if not isinstance(fields, dict):
-        return []
-
     date_value = fields.get("date")
 
-    if date_value in (None, ""):
+    if date_value is None or date_value == "":
         return []
 
-    if not isinstance(date_value, str):
-        return [{
-            "issue_type": "invalid_date",
-            "message": "Date must be text in YYYY-MM-DD format.",
-            "severity": "error",
-        }]
-
     try:
-        datetime.strptime(date_value.strip(), "%Y-%m-%d")
+        datetime.strptime(date_value, "%Y-%m-%d")
     except ValueError:
-        return [{
-            "issue_type": "invalid_date",
-            "message": f"Invalid date: {date_value}. Expected YYYY-MM-DD.",
-            "severity": "error",
-        }]
+        return [
+            {
+                "issue_type": "invalid_date",
+                "message": (
+                    f"Invalid date: {date_value}. "
+                    "Expected YYYY-MM-DD."
+                ),
+                "severity": "error",
+            }
+        ]
 
     return []
+
 
 def validate_document(fields, document_type):
     issues = []
 
     issues.extend(
-        validate_required_fields(fields, document_type)
-    )
-    issues.extend(
-        validate_positive_amounts(fields)
-    )
-    issues.extend(
-        validate_total_consistency(fields)
-    )
-    issues.extend(
-        validate_currency(fields)
-    )
-    issues.extend(
-        validate_date(fields)
+        validate_required_fields(
+            fields,
+            document_type,
+        )
     )
 
+    issues.extend(validate_positive_amounts(fields))
+    issues.extend(validate_total_consistency(fields))
+    issues.extend(validate_currency(fields))
+    issues.extend(validate_date(fields))
+
     return issues
+
+
+def validate_scan_result(fields, document_type, scan_mode):
+    if scan_mode == "quick":
+        return []
+
+    if scan_mode == "full":
+        return validate_document(
+            fields,
+            document_type,
+        )
+
+    if scan_mode == "partial":
+        issues = []
+
+        issues.extend(validate_positive_amounts(fields))
+        issues.extend(validate_total_consistency(fields))
+        issues.extend(validate_currency(fields))
+        issues.extend(validate_date(fields))
+
+        return issues
+
+    return [
+        {
+            "issue_type": "invalid_scan_mode",
+            "message": f"Unsupported scan mode: {scan_mode}",
+            "severity": "error",
+        }
+    ]

@@ -1,3 +1,4 @@
+from uuid import uuid4
 from src.graph_nodes import (
     load_node,
     ocr_node,
@@ -93,6 +94,7 @@ partial_scan_state = {
 
 partial_scan_result = partial_scan_node(partial_scan_state)
 
+print("PARTIAL RESULT:", partial_scan_result)
 assert "scan_result" in partial_scan_result
 assert partial_scan_result["scan_result"]["document_type"] == "invoice"
 assert partial_scan_result["scan_result"]["scan_mode"] == "partial"
@@ -142,16 +144,18 @@ assert validation_result["validation_issues"][0]["issue_type"] == "total_mismatc
 
 print("Validation node tests passed.")
 
+save_invoice_number = f"GRAPH-SAVE-{uuid4().hex[:8].upper()}"
+
 save_state = {
     "image_path": "samples/graph_save_test.jpg",
-    "raw_ocr_text": "TAX INVOICE Invoice No: GRAPH-SAVE-001",
+    "raw_ocr_text": f"TAX INVOICE Invoice No: {save_invoice_number}",
     "scan_result": {
         "document_type": "invoice",
         "scan_mode": "full",
         "fields": {
             "supplier_name": "Vodafone Egypt",
-            "invoice_number": "GRAPH-SAVE-001",
-            "date": "2026-08-09",
+            "invoice_number": save_invoice_number,
+            "date": "2026-08-10",
             "customer": None,
             "subtotal": 1000,
             "tax": 140,
