@@ -1,7 +1,6 @@
 import sqlite3
 from pathlib import Path
 
-
 DATABASE_PATH = Path("data/docuagent.db")
 
 
@@ -13,11 +12,13 @@ def get_database_connection():
 
     return connection
 
+
 def create_tables():
     connection = get_database_connection()
     cursor = connection.cursor()
 
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS documents (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             filename TEXT NOT NULL,
@@ -26,9 +27,11 @@ def create_tables():
             raw_ocr_text TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+        """
+    )
 
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS extracted_fields (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             document_id INTEGER NOT NULL,
@@ -36,9 +39,11 @@ def create_tables():
             field_value TEXT,
             FOREIGN KEY (document_id) REFERENCES documents(id)
         )
-    """)
+        """
+    )
 
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS validation_issues (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             document_id INTEGER NOT NULL,
@@ -47,10 +52,12 @@ def create_tables():
             severity TEXT NOT NULL,
             FOREIGN KEY (document_id) REFERENCES documents(id)
         )
-    """)
+        """
+    )
 
     connection.commit()
     connection.close()
+
 
 def save_document(filename, document_type, scan_mode, raw_ocr_text):
     connection = get_database_connection()
@@ -81,6 +88,7 @@ def save_document(filename, document_type, scan_mode, raw_ocr_text):
 
     return document_id
 
+
 def save_extracted_fields(document_id, fields):
     connection = get_database_connection()
     cursor = connection.cursor()
@@ -104,6 +112,7 @@ def save_extracted_fields(document_id, fields):
 
     connection.commit()
     connection.close()
+
 
 def save_validation_issues(document_id, issues):
     connection = get_database_connection()
@@ -129,7 +138,8 @@ def save_validation_issues(document_id, issues):
         )
 
     connection.commit()
-    connection.close()    
+    connection.close()
+
 
 def invoice_number_exists(invoice_number):
     if invoice_number in (None, ""):
@@ -150,9 +160,11 @@ def invoice_number_exists(invoice_number):
     )
 
     exists = cursor.fetchone() is not None
+
     connection.close()
 
     return exists
+
 
 def get_document(document_id):
     connection = get_database_connection()
@@ -168,6 +180,7 @@ def get_document(document_id):
     )
 
     document = cursor.fetchone()
+
     connection.close()
 
     return document
@@ -187,6 +200,7 @@ def get_document_fields(document_id):
     )
 
     rows = cursor.fetchall()
+
     connection.close()
 
     return {
@@ -209,6 +223,7 @@ def get_document_issues(document_id):
     )
 
     rows = cursor.fetchall()
+
     connection.close()
 
     return [
@@ -216,6 +231,39 @@ def get_document_issues(document_id):
             "issue_type": row["issue_type"],
             "message": row["message"],
             "severity": row["severity"],
+        }
+        for row in rows
+    ]
+
+
+def list_documents():
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            id,
+            filename,
+            document_type,
+            scan_mode,
+            created_at
+        FROM documents
+        ORDER BY created_at DESC
+        """
+    )
+
+    rows = cursor.fetchall()
+
+    connection.close()
+
+    return [
+        {
+            "id": row["id"],
+            "filename": row["filename"],
+            "document_type": row["document_type"],
+            "scan_mode": row["scan_mode"],
+            "created_at": row["created_at"],
         }
         for row in rows
     ]

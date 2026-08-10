@@ -16,12 +16,7 @@ result = run_partial_scan_from_request(
     "Extract the invoice number, total, and currency.",
 )
 
-print("RESULT:")
-print(result)
-print("TOTAL VALUE:")
-print(repr(result["fields"]["total"]))
-print("TOTAL TYPE:")
-print(type(result["fields"]["total"]))
+
 
 
 assert result is not None

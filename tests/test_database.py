@@ -1,11 +1,18 @@
-from src.database import DATABASE_PATH, get_database_connection
+from src.database import list_documents
 
-connection = get_database_connection()
 
-assert connection is not None
-assert DATABASE_PATH.exists()
+documents = list_documents()
 
-connection.close()
+print("Saved documents:")
+print(documents)
 
-print("Database connection test passed.")
-print(f"Database path: {DATABASE_PATH}")
+assert isinstance(documents, list)
+
+for document in documents:
+    assert "id" in document
+    assert "filename" in document
+    assert "document_type" in document
+    assert "scan_mode" in document
+    assert "created_at" in document
+
+print("Database query test passed.")
