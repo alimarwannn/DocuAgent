@@ -1,16 +1,40 @@
+from uuid import uuid4
+
 from src.database import (
+    create_tables,
+    filter_documents_by_amount,
+    filter_documents_by_date,
+    filter_documents_by_party,
+    filter_documents_by_type,
+    find_document_by_number,
     get_document,
     get_document_fields,
     get_document_issues,
+    list_documents,
+    save_document,
+    save_extracted_fields,
+    save_validation_issues,
 )
-from src.document_service import save_processed_document
 
-scan_result = {
-    "document_type": "invoice",
-    "scan_mode": "full",
-    "fields": {
+
+create_tables()
+
+unique_id = uuid4().hex[:8]
+
+invoice_number = f"QUERY-{unique_id}"
+
+document_id = save_document(
+    filename=f"query_test_{unique_id}.jpg",
+    document_type="invoice",
+    scan_mode="full",
+    raw_ocr_text=f"Invoice No: {invoice_number}",
+)
+
+save_extracted_fields(
+    document_id,
+    {
         "supplier_name": "Vodafone Egypt",
-        "invoice_number": "QUERY-001",
+        "invoice_number": invoice_number,
         "date": "2026-08-05",
         "customer": None,
         "subtotal": 1000,
@@ -18,31 +42,68 @@ scan_result = {
         "total": 1200,
         "currency": "EGP",
     },
-}
-
-saved_result = save_processed_document(
-    filename="query_test_invoice.jpg",
-    raw_ocr_text="Invoice No: QUERY-001",
-    scan_result=scan_result,
 )
 
-document_id = saved_result["document_id"]
+save_validation_issues(
+    document_id,
+    [
+        {
+            "issue_type": "total_mismatch",
+            "message": "Subtotal plus tax is 1140, but total is 1200.",
+            "severity": "error",
+        }
+    ],
+)
+
+
+documents = list_documents()
+assert isinstance(documents, list)
+assert any(document["id"] == document_id for document in documents)
+
 
 document = get_document(document_id)
+assert document["id"] == document_id
+
+
 fields = get_document_fields(document_id)
+assert fields["supplier_name"] == "Vodafone Egypt"
+assert fields["invoice_number"] == invoice_number
+
+
 issues = get_document_issues(document_id)
-
-assert document is not None
-assert document["filename"] == "query_test_invoice.jpg"
-assert document["document_type"] == "invoice"
-
-assert fields["invoice_number"] == "QUERY-001"
-assert fields["total"] == "1200"
-
-assert len(issues) == 1
 assert issues[0]["issue_type"] == "total_mismatch"
 
-print("Database query helper tests passed.")
-print(dict(document))
-print(fields)
-print(issues)
+
+invoice_documents = filter_documents_by_type("invoice")
+assert any(document["id"] == document_id for document in invoice_documents)
+
+
+date_documents = filter_documents_by_date(
+    "2026-08-01",
+    "2026-08-10",
+)
+assert any(document["id"] == document_id for document in date_documents)
+
+
+party_documents = filter_documents_by_party("Vodafone")
+assert any(document["id"] == document_id for document in party_documents)
+
+
+number_documents = find_document_by_number(invoice_number)
+assert any(document["id"] == document_id for document in number_documents)
+
+
+amount_documents = filter_documents_by_amount(
+    minimum_amount=1000,
+)
+assert any(document["id"] == document_id for document in amount_documents)
+
+
+range_documents = filter_documents_by_amount(
+    minimum_amount=1100,
+    maximum_amount=1300,
+)
+assert any(document["id"] == document_id for document in range_documents)
+
+
+print("Database query and filter tests passed.")

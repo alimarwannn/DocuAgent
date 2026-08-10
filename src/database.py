@@ -183,7 +183,10 @@ def get_document(document_id):
 
     connection.close()
 
-    return document
+    if document is None:
+        return None
+
+    return dict(document)
 
 
 def get_document_fields(document_id):
@@ -242,14 +245,9 @@ def list_documents():
 
     cursor.execute(
         """
-        SELECT
-            id,
-            filename,
-            document_type,
-            scan_mode,
-            created_at
+        SELECT *
         FROM documents
-        ORDER BY created_at DESC
+        ORDER BY created_at DESC, id DESC
         """
     )
 
@@ -257,13 +255,135 @@ def list_documents():
 
     connection.close()
 
-    return [
-        {
-            "id": row["id"],
-            "filename": row["filename"],
-            "document_type": row["document_type"],
-            "scan_mode": row["scan_mode"],
-            "created_at": row["created_at"],
-        }
-        for row in rows
-    ]
+    return [dict(row) for row in rows]
+
+
+def filter_documents_by_type(document_type):
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM documents
+        WHERE document_type = ?
+        ORDER BY created_at DESC, id DESC
+        """,
+        (document_type,),
+    )
+
+    rows = cursor.fetchall()
+
+    connection.close()
+
+    return [dict(row) for row in rows]
+
+
+def filter_documents_by_date(start_date, end_date):
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        SELECT DISTINCT d.*
+        FROM documents d
+        JOIN extracted_fields e
+            ON d.id = e.document_id
+        WHERE e.field_name = 'date'
+          AND e.field_value BETWEEN ? AND ?
+        ORDER BY d.created_at DESC, d.id DESC
+        """,
+        (start_date, end_date),
+    )
+
+    rows = cursor.fetchall()
+
+    connection.close()
+
+    return [dict(row) for row in rows]
+
+
+def filter_documents_by_party(name):
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        SELECT DISTINCT d.*
+        FROM documents d
+        JOIN extracted_fields e
+            ON d.id = e.document_id
+        WHERE e.field_name IN ('supplier_name', 'merchant_name')
+          AND LOWER(e.field_value) LIKE LOWER(?)
+        ORDER BY d.created_at DESC, d.id DESC
+        """,
+        (f"%{name}%",),
+    )
+
+    rows = cursor.fetchall()
+
+    connection.close()
+
+    return [dict(row) for row in rows]
+
+
+def find_document_by_number(document_number):
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        SELECT DISTINCT d.*
+        FROM documents d
+        JOIN extracted_fields e
+            ON d.id = e.document_id
+        WHERE e.field_name IN ('invoice_number', 'receipt_number')
+          AND e.field_value = ?
+        ORDER BY d.created_at DESC, d.id DESC
+        """,
+        (str(document_number),),
+    )
+
+    rows = cursor.fetchall()
+
+    connection.close()
+
+    return [dict(row) for row in rows]
+
+
+def filter_documents_by_amount(
+    minimum_amount=None,
+    maximum_amount=None,
+):
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    query = """
+        SELECT DISTINCT d.*
+        FROM documents d
+        JOIN extracted_fields e
+            ON d.id = e.document_id
+        WHERE e.field_name = 'total'
+          AND e.field_value IS NOT NULL
+          AND TRIM(e.field_value) != ''
+    """
+
+    parameters = []
+
+    if minimum_amount is not None:
+        query += " AND CAST(e.field_value AS REAL) >= ?"
+        parameters.append(float(minimum_amount))
+
+    if maximum_amount is not None:
+        query += " AND CAST(e.field_value AS REAL) <= ?"
+        parameters.append(float(maximum_amount))
+
+    query += " ORDER BY d.created_at DESC, d.id DESC"
+
+    cursor.execute(query, parameters)
+
+    rows = cursor.fetchall()
+
+    connection.close()
+
+    return [dict(row) for row in rows]
