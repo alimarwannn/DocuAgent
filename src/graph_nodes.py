@@ -25,6 +25,12 @@ from src.document_service import (
 )
 
 
+SUPPORTED_DOCUMENT_TYPES = {
+    "invoice",
+    "receipt",
+}
+
+
 def load_node(state: DocumentState):
     image_path = state.get(
         "image_path"
@@ -63,15 +69,42 @@ def ocr_node(state: DocumentState):
                 "OCR failed."
         }
 
+    raw_text = (
+        ocr_result
+        .get(
+            "raw_text",
+            "",
+        )
+        .strip()
+    )
+
+    if not raw_text:
+        return {
+            "error":
+                "OCR returned no readable text."
+        }
+
     return {
         "raw_ocr_text":
-            ocr_result["raw_text"]
+            raw_text
     }
 
 
 def document_type_node(
     state: DocumentState,
 ):
+    override = state.get(
+        "document_type_override"
+    )
+
+    if override in (
+        SUPPORTED_DOCUMENT_TYPES
+    ):
+        return {
+            "document_type":
+                override
+        }
+
     raw_ocr_text = state.get(
         "raw_ocr_text"
     )
@@ -90,7 +123,10 @@ def document_type_node(
         )
     )
 
-    if document_type == "unknown":
+    if (
+        document_type
+        not in SUPPORTED_DOCUMENT_TYPES
+    ):
         return {
             "document_type":
                 "unknown",
@@ -255,10 +291,25 @@ def quick_scan_node(
                 "Missing data for quick scan."
         }
 
-    scan_result = run_quick_scan(
-        raw_ocr_text,
-        document_type,
-    )
+    try:
+        scan_result = run_quick_scan(
+            raw_ocr_text,
+            document_type,
+        )
+
+    except Exception as error:
+        return {
+            "error": (
+                "Quick scan failed: "
+                f"{error}"
+            )
+        }
+
+    if scan_result is None:
+        return {
+            "error":
+                "Quick scan failed."
+        }
 
     return {
         "scan_result":
@@ -437,9 +488,7 @@ def human_review_node(
     saved_result = (
         save_processed_document(
             filename=image_path,
-            raw_ocr_text=(
-                raw_ocr_text
-            ),
+            raw_ocr_text=raw_ocr_text,
             scan_result=scan_result,
             review_status=(
                 "pending_review"
@@ -502,9 +551,7 @@ def save_node(
     saved_result = (
         save_processed_document(
             filename=image_path,
-            raw_ocr_text=(
-                raw_ocr_text
-            ),
+            raw_ocr_text=raw_ocr_text,
             scan_result=scan_result,
             review_status=(
                 "approved"

@@ -1,3 +1,4 @@
+import hashlib
 import html
 import json
 from pathlib import Path
@@ -6,13 +7,30 @@ import streamlit as st
 
 from src.database import (
     create_tables,
+    get_document,
     get_document_fields,
     get_document_issues,
-    list_documents,
+    list_review_documents,
 )
+
+from src.document_service import (
+    approve_reviewed_document,
+    reject_reviewed_document,
+)
+
 from src.graph import build_document_graph
+
+from src.library_service import (
+    get_library_counts,
+    list_document_summaries,
+)
+
 from src.zaki_graph import run_zaki
 
+
+# ---------------------------------------------------------
+# PAGE CONFIG
+# ---------------------------------------------------------
 
 st.set_page_config(
     page_title="DocuAgent",
@@ -22,19 +40,41 @@ st.set_page_config(
 )
 
 
+# ---------------------------------------------------------
+# STYLING
+# ---------------------------------------------------------
+
 st.html(
     """
     <style>
     #MainMenu,
     footer,
-    [data-testid="stToolbar"],
     [data-testid="stDecoration"] {
         display: none !important;
     }
 
     [data-testid="stHeader"] {
-        background: transparent;
-        height: 0;
+        background: transparent !important;
+    }
+
+    [data-testid="stSidebarCollapsedControl"] {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        z-index: 999999 !important;
+    }
+
+    [data-testid="stSidebarCollapsedControl"] button {
+        background: white !important;
+        color: #17191d !important;
+        border: 1px solid #e2e5e9 !important;
+        border-radius: 10px !important;
+        box-shadow: 0 4px 14px rgba(20, 24, 32, 0.10) !important;
+    }
+
+    [data-testid="stSidebarCollapsedControl"] button svg {
+        fill: #17191d !important;
+        color: #17191d !important;
     }
 
     .stApp {
@@ -42,32 +82,94 @@ st.html(
     }
 
     .block-container {
-        max-width: 1380px;
-        padding-top: 0.8rem;
+        max-width: 1320px;
+        padding-top: 0.7rem;
         padding-bottom: 2rem;
     }
 
     [data-testid="stSidebar"] {
-        background: #111318;
-        border-right: 1px solid #202329;
+        border-right: 1px solid #24272d;
     }
 
-    [data-testid="stSidebar"] * {
-        color: #f5f5f5;
+    [data-testid="stSidebar"] .stButton > button {
+        width: 100%;
+        border-radius: 10px !important;
+        min-height: 42px;
+        font-weight: 650 !important;
     }
 
-    h1, h2, h3 {
-        letter-spacing: -0.025em;
+    [data-testid="stSidebar"] .stButton > button[kind="secondary"] {
+        background: #1b1e24 !important;
+        color: #f5f5f5 !important;
+        border: 1px solid #2b3038 !important;
     }
 
-    .brand {
+    [data-testid="stSidebar"] .stButton > button[kind="secondary"]:hover {
+        background: #252a32 !important;
+        color: white !important;
+        border-color: #424851 !important;
+    }
+
+    [data-testid="stSidebar"] .stButton > button[kind="primary"] {
+        background: #e60000 !important;
+        color: white !important;
+        border: 1px solid #e60000 !important;
+    }
+
+    [data-testid="stSidebar"] .stButton > button * {
+        color: inherit !important;
+    }
+
+    .sidebar-brand {
+        font-size: 1.45rem;
+        font-weight: 800;
+        margin-bottom: 4px;
+    }
+
+    .sidebar-copy {
+        color: #9298a3;
+        font-size: 0.82rem;
+        margin-bottom: 22px;
+    }
+
+    .sidebar-label {
+        color: #777e89;
+        text-transform: uppercase;
+        font-size: 0.67rem;
+        letter-spacing: 0.09em;
+        font-weight: 750;
+        margin-top: 19px;
+        margin-bottom: 8px;
+    }
+
+    .sidebar-stat {
+        background: #1b1e24;
+        border: 1px solid #292d34;
+        border-radius: 13px;
+        padding: 12px 14px;
+        margin-top: 10px;
+    }
+
+    .sidebar-stat-label {
+        color: #9298a3;
+        font-size: 0.72rem;
+    }
+
+    .sidebar-stat-value {
+        color: white;
+        font-size: 1.35rem;
+        font-weight: 750;
+        margin-top: 3px;
+    }
+
+    .page-header {
         display: flex;
         align-items: center;
         gap: 12px;
-        margin-bottom: 12px;
+        margin-bottom: 15px;
     }
 
-    .brand-mark {
+    .logo {
         width: 40px;
         height: 40px;
         border-radius: 12px;
@@ -78,128 +180,136 @@ st.html(
         justify-content: center;
         font-size: 19px;
         font-weight: 800;
-        box-shadow: 0 7px 20px rgba(230, 0, 0, 0.18);
+        box-shadow: 0 7px 20px rgba(230, 0, 0, 0.17);
     }
 
-    .brand-name {
-        color: #17191d;
-        font-size: 1.4rem;
+    .page-title {
+        color: #15171b;
+        font-size: 1.5rem;
         font-weight: 800;
         line-height: 1;
     }
 
-    .brand-tagline {
+    .page-copy {
         color: #777d87;
-        font-size: 0.82rem;
-        margin-top: 4px;
+        font-size: 0.84rem;
+        margin-top: 5px;
     }
 
-    .hero {
+    .home-intro {
         background: linear-gradient(
             135deg,
-            #17191f 0%,
-            #252932 100%
+            #17191f,
+            #272b33
         );
-        border-radius: 21px;
-        padding: 24px 32px;
-        margin: 0 0 15px 0;
+        border-radius: 20px;
+        padding: 19px 25px;
+        margin-bottom: 15px;
         color: white;
-        box-shadow: 0 12px 32px rgba(22, 24, 29, 0.09);
+        box-shadow: 0 10px 30px rgba(20, 24, 32, 0.08);
     }
 
-    .hero-eyebrow {
-        color: #ff6464;
+    .home-intro-label {
+        color: #ff6666;
         text-transform: uppercase;
-        letter-spacing: 0.11em;
-        font-size: 0.68rem;
+        letter-spacing: 0.1em;
+        font-size: 0.67rem;
         font-weight: 800;
-        margin-bottom: 8px;
+        margin-bottom: 6px;
     }
 
-    .hero-title {
-        color: white;
-        font-size: 1.9rem;
+    .home-intro-title {
+        font-size: 1.65rem;
         font-weight: 800;
-        letter-spacing: -0.035em;
-        line-height: 1.1;
-        margin-bottom: 8px;
+        line-height: 1.15;
+        margin-bottom: 6px;
     }
 
-    .hero-copy {
-        color: #c9cdd5;
-        max-width: 780px;
-        font-size: 0.91rem;
-        line-height: 1.5;
+    .home-intro-copy {
+        color: #c8ccd3;
+        font-size: 0.87rem;
+        line-height: 1.45;
     }
 
-    .panel {
-        background: white;
-        border: 1px solid #e7e9ed;
-        border-radius: 17px;
-        padding: 16px 20px;
-        box-shadow: 0 3px 14px rgba(20, 24, 32, 0.03);
-        margin-bottom: 12px;
-    }
-
-    .panel-title {
-        color: #15171b;
+    .section-heading {
+        color: #17191d;
         font-size: 1.15rem;
         font-weight: 750;
         margin-bottom: 3px;
     }
 
-    .panel-copy {
-        color: #737985;
-        font-size: 0.84rem;
-        line-height: 1.45;
+    .section-copy {
+        color: #777d87;
+        font-size: 0.82rem;
+        margin-bottom: 10px;
     }
 
-    .metric-card {
+    .mini-card {
+        background: white;
+        border: 1px solid #e6e8ec;
+        border-radius: 15px;
+        padding: 15px 16px;
+        margin-bottom: 10px;
+        box-shadow: 0 3px 13px rgba(20, 24, 32, 0.025);
+    }
+
+    .mini-label {
+        color: #858b95;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        font-size: 0.66rem;
+        font-weight: 750;
+    }
+
+    .mini-value {
+        color: #17191d;
+        font-size: 1.15rem;
+        font-weight: 750;
+        margin-top: 5px;
+    }
+
+    .document-row {
         background: white;
         border: 1px solid #e7e9ed;
-        border-radius: 17px;
-        padding: 18px 20px;
-        min-height: 105px;
-        box-shadow: 0 3px 15px rgba(20, 24, 32, 0.035);
+        border-radius: 12px;
+        padding: 10px 13px;
+        margin-bottom: 7px;
     }
 
-    .metric-label {
-        color: #838994;
-        text-transform: uppercase;
-        font-size: 0.71rem;
-        letter-spacing: 0.07em;
-        font-weight: 750;
+    .document-row-title {
+        color: #191b20;
+        font-size: 0.88rem;
+        font-weight: 700;
     }
 
-    .metric-value {
-        color: #17191d;
-        font-size: 1.35rem;
-        font-weight: 750;
-        margin-top: 8px;
+    .document-row-meta {
+        color: #858b95;
+        font-size: 0.74rem;
+        margin-top: 3px;
     }
 
     .field-card {
         background: #fafafa;
-        border: 1px solid #ebecef;
-        border-radius: 14px;
-        padding: 15px 16px;
-        margin-bottom: 11px;
-        min-height: 82px;
+        border: 1px solid #e8eaee;
+        border-radius: 13px;
+        padding: 13px 15px;
+        min-height: 76px;
+        margin-bottom: 9px;
     }
 
     .field-label {
-        color: #828893;
-        font-size: 0.7rem;
+        color: #838994;
         text-transform: uppercase;
         letter-spacing: 0.06em;
+        font-size: 0.67rem;
         font-weight: 750;
     }
 
     .field-value {
         color: #17191d;
-        font-size: 1rem;
+        font-size: 0.95rem;
         font-weight: 650;
-        margin-top: 7px;
+        margin-top: 6px;
         word-break: break-word;
     }
 
@@ -207,197 +317,134 @@ st.html(
         background: #effbf4;
         border: 1px solid #b7e7c9;
         color: #126b40;
-        border-radius: 13px;
-        padding: 13px 15px;
+        border-radius: 12px;
+        padding: 11px 14px;
         font-weight: 650;
+        margin-bottom: 10px;
     }
 
     .warning-box {
         background: #fff9eb;
         border: 1px solid #f4d68e;
-        color: #8c5a07;
-        border-radius: 13px;
-        padding: 13px 15px;
+        color: #845508;
+        border-radius: 12px;
+        padding: 11px 14px;
         font-weight: 650;
+        margin-bottom: 10px;
     }
 
     .error-box {
         background: #fff2f1;
         border: 1px solid #f1bbb6;
         color: #a92b22;
-        border-radius: 13px;
-        padding: 13px 15px;
+        border-radius: 12px;
+        padding: 11px 14px;
         font-weight: 650;
+        margin-bottom: 10px;
+    }
+
+    .issue {
+        background: #fff9ec;
+        border-left: 4px solid #f79009;
+        border-radius: 8px;
+        padding: 10px 13px;
+        margin-bottom: 8px;
+        color: #64420b;
+        font-size: 0.86rem;
     }
 
     .issue-error {
-        background: #fff6f5;
-        border-left: 4px solid #d92d20;
-        padding: 13px 15px;
-        border-radius: 9px;
-        margin-bottom: 10px;
-        color: #5c1d18;
+        background: #fff5f4;
+        border-left-color: #d92d20;
+        color: #7b241d;
     }
 
-    .issue-warning {
-        background: #fff9ec;
-        border-left: 4px solid #f79009;
-        padding: 13px 15px;
-        border-radius: 9px;
-        margin-bottom: 10px;
-        color: #67430b;
+    .status-approved {
+        color: #087443;
     }
 
-    .zaki-card {
+    .status-review {
+        color: #a46305;
+    }
+
+    .status-rejected {
+        color: #b42318;
+    }
+
+    .zaki-box {
         background: linear-gradient(
             135deg,
-            #ffffff 0%,
-            #fff5f5 100%
+            #ffffff,
+            #fff5f5
         );
-        border: 1px solid #efdada;
-        border-radius: 21px;
-        padding: 24px 26px;
-        margin-bottom: 18px;
+        border: 1px solid #efdcdc;
+        border-radius: 16px;
+        padding: 16px;
+        margin-bottom: 10px;
     }
 
     .zaki-title {
-        font-size: 1.5rem;
+        font-size: 1.08rem;
         font-weight: 800;
-        color: #15171b;
+        color: #181a1f;
     }
 
     .zaki-copy {
-        color: #6e7480;
-        margin-top: 6px;
-        line-height: 1.5;
-    }
-
-    .empty-preview {
-        height: 265px;
-        border: 1.5px dashed #d5d9df;
-        border-radius: 17px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: white;
-        color: #949aa5;
-        text-align: center;
-        padding: 30px;
-    }
-
-    .empty-preview-icon {
-        font-size: 1.7rem;
-        margin-bottom: 8px;
-    }
-
-    .sidebar-brand {
-        font-size: 1.4rem;
-        font-weight: 800;
-        margin-bottom: 6px;
-    }
-
-    .sidebar-copy {
-        color: #9399a4 !important;
-        font-size: 0.82rem;
-        line-height: 1.5;
-        margin-bottom: 26px;
-    }
-
-    .sidebar-section-label {
-        color: #8b919b !important;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-size: 0.68rem;
-        font-weight: 700;
-        margin-bottom: 11px;
-    }
-
-    .sidebar-card {
-        background: #1b1e24;
-        border: 1px solid #292d35;
-        border-radius: 14px;
-        padding: 14px;
-        margin-bottom: 12px;
-    }
-
-    .sidebar-card-label {
-        color: #9197a2 !important;
-        font-size: 0.74rem;
-    }
-
-    .sidebar-card-value {
-        color: white !important;
-        font-size: 1.6rem;
-        font-weight: 750;
-        margin-top: 3px;
-    }
-
-    .sidebar-tip {
-        color: #a9aeb7 !important;
-        line-height: 1.55;
+        color: #747a85;
         font-size: 0.8rem;
+        margin-top: 4px;
     }
 
     div[data-testid="stFileUploader"] {
         background: white;
-        border-radius: 14px;
+        border-radius: 13px;
     }
 
     [data-testid="stFileUploaderDropzone"] {
-        padding-top: 0.55rem !important;
-        padding-bottom: 0.55rem !important;
-    }
-
-    div[data-testid="stRadio"] {
-        margin-top: -4px;
-    }
-
-    button[kind="primary"] {
-        background: #e60000 !important;
-        border-color: #e60000 !important;
-        color: white !important;
-    }
-
-    button[kind="primary"]:hover {
-        background: #c90000 !important;
-        border-color: #c90000 !important;
-        color: white !important;
-    }
-
-    button[kind="primary"]:disabled {
-        background: #e5e7eb !important;
-        border-color: #e5e7eb !important;
-        color: #9ca3af !important;
-        opacity: 1 !important;
+        padding-top: 0.5rem !important;
+        padding-bottom: 0.5rem !important;
     }
 
     .stButton > button,
     .stDownloadButton > button {
         border-radius: 10px;
         font-weight: 650;
-        min-height: 40px;
+        min-height: 39px;
     }
 
-    div[data-baseweb="tab-list"] {
-        gap: 18px;
-        border-bottom: 1px solid #e1e3e7;
+    main .stButton > button[kind="primary"] {
+        background: #e60000 !important;
+        border-color: #e60000 !important;
+        color: white !important;
     }
 
-    button[data-baseweb="tab"] {
-        font-weight: 650;
-        padding-top: 7px;
-        padding-bottom: 7px;
-        padding-left: 4px;
-        padding-right: 4px;
+    main .stButton > button[kind="primary"]:hover {
+        background: #c90000 !important;
+        border-color: #c90000 !important;
+    }
+
+    main .stButton > button[kind="primary"]:disabled {
+        background: #e5e7eb !important;
+        border-color: #e5e7eb !important;
+        color: #9ca3af !important;
+        opacity: 1 !important;
+    }
+
+    div[data-testid="stProgress"] > div > div {
+        border-radius: 999px;
     }
 
     div[data-testid="stChatMessage"] {
-        border-radius: 17px;
+        border-radius: 14px;
     }
     </style>
     """
 )
 
+
+# ---------------------------------------------------------
+# STARTUP
+# ---------------------------------------------------------
 
 create_tables()
 
@@ -407,27 +454,67 @@ def get_document_graph():
     return build_document_graph()
 
 
+# ---------------------------------------------------------
+# BASIC HELPERS
+# ---------------------------------------------------------
+
 def ui(content):
     st.html(content)
 
 
 def safe(value):
-    if value in (None, ""):
+    if value in (
+        None,
+        "",
+    ):
         return "Not found"
 
-    return html.escape(str(value))
+    return html.escape(
+        str(value)
+    )
 
 
-def initialize_session_state():
+def initialize_state():
     defaults = {
-        "scan_output": None,
-        "last_uploaded_name": None,
+        "page":
+            "Home",
+
+        "scan_output":
+            None,
+
+        "last_image_path":
+            None,
+
+        "last_uploaded_name":
+            None,
+
+        "last_upload_signature":
+            None,
+
+        "last_scan_config":
+            None,
+
+        "current_scan_options":
+            None,
+
+        "uploader_version":
+            0,
+
+        "review_message":
+            None,
+
+        "home_zaki_answer":
+            None,
+
         "zaki_messages": [
             {
-                "role": "assistant",
+                "role":
+                    "assistant",
+
                 "content": (
-                    "Hi, I'm Zaki. Ask me anything "
-                    "about your saved documents."
+                    "Hi, I'm Zaki. "
+                    "Ask me anything about "
+                    "your saved documents."
                 ),
             }
         ],
@@ -435,79 +522,260 @@ def initialize_session_state():
 
     for key, value in defaults.items():
         if key not in st.session_state:
-            st.session_state[key] = value
+            st.session_state[
+                key
+            ] = value
 
 
-def save_uploaded_file(uploaded_file):
-    upload_directory = Path("data/uploads")
+def go_to(
+    page,
+    document_id=None,
+):
+    st.session_state.page = page
 
-    upload_directory.mkdir(
+    if (
+        page == "Review"
+        and document_id
+        is not None
+    ):
+        st.session_state[
+            "review_document_select"
+        ] = document_id
+
+    if (
+        page == "Documents"
+        and document_id
+        is not None
+    ):
+        st.session_state[
+            "document_select"
+        ] = document_id
+
+    st.rerun()
+
+
+def uploaded_signature(
+    uploaded_file,
+):
+    if uploaded_file is None:
+        return None
+
+    file_bytes = (
+        uploaded_file.getvalue()
+    )
+
+    return hashlib.sha256(
+        file_bytes
+    ).hexdigest()
+
+
+def clean_filename(
+    filename,
+):
+    name = Path(
+        filename
+    ).name
+
+    cleaned = "".join(
+        character
+        for character in name
+        if (
+            character.isalnum()
+            or character
+            in "._-"
+        )
+    )
+
+    if cleaned:
+        return cleaned
+
+    return "document.jpg"
+
+
+def save_uploaded_file(
+    uploaded_file,
+):
+    directory = Path(
+        "data/uploads"
+    )
+
+    directory.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    safe_name = Path(uploaded_file.name).name
-    file_path = upload_directory / safe_name
-
-    with open(file_path, "wb") as file:
-        file.write(uploaded_file.getbuffer())
-
-    return str(file_path)
-
-
-def get_document_display_name(document, fields):
-    document_type = str(
-        document.get(
-            "document_type",
-            "document",
-        )
-    ).title()
-
-    party = (
-        fields.get("supplier_name")
-        or fields.get("merchant_name")
+    file_bytes = (
+        uploaded_file.getvalue()
     )
 
-    number = (
-        fields.get("invoice_number")
-        or fields.get("receipt_number")
+    digest = hashlib.sha256(
+        file_bytes
+    ).hexdigest()[:12]
+
+    filename = clean_filename(
+        uploaded_file.name
     )
 
-    if party and number:
-        return f"{party} · {number}"
+    file_path = (
+        directory
+        / f"{digest}_{filename}"
+    )
 
-    if number:
-        return f"{document_type} · {number}"
+    # Do not rewrite identical files.
+    # This keeps the modified time unchanged,
+    # allowing OCR caching to work on retries.
+    if not file_path.exists():
+        with open(
+            file_path,
+            "wb",
+        ) as file:
+            file.write(
+                file_bytes
+            )
 
-    if party:
-        return f"{party} · {document_type}"
+    return str(
+        file_path
+    )
 
-    return f"{document_type} #{document['id']}"
+
+def clear_document_workspace():
+    st.session_state[
+        "scan_output"
+    ] = None
+
+    st.session_state[
+        "last_image_path"
+    ] = None
+
+    st.session_state[
+        "last_uploaded_name"
+    ] = None
+
+    st.session_state[
+        "last_upload_signature"
+    ] = None
+
+    st.session_state[
+        "last_scan_config"
+    ] = None
+
+    st.session_state[
+        "current_scan_options"
+    ] = None
+
+    st.session_state[
+        "uploader_version"
+    ] += 1
 
 
-def display_field_cards(fields):
+def build_scan_state(
+    image_path,
+    scan_mode,
+    user_request="",
+    document_type_override=None,
+):
+    state = {
+        "image_path":
+            image_path,
+
+        "scan_mode":
+            scan_mode,
+
+        "error":
+            None,
+    }
+
+    if (
+        scan_mode == "partial"
+        and user_request.strip()
+    ):
+        state[
+            "user_request"
+        ] = user_request.strip()
+
+    if document_type_override:
+        state[
+            "document_type_override"
+        ] = document_type_override
+
+    return state
+
+
+# ---------------------------------------------------------
+# DISPLAY HELPERS
+# ---------------------------------------------------------
+
+def status_label(status):
+    labels = {
+        "approved":
+            "Approved",
+
+        "pending_review":
+            "Needs review",
+
+        "rejected":
+            "Rejected",
+    }
+
+    return labels.get(
+        status,
+        "Saved",
+    )
+
+
+def status_class(status):
+    classes = {
+        "approved":
+            "status-approved",
+
+        "pending_review":
+            "status-review",
+
+        "rejected":
+            "status-rejected",
+    }
+
+    return classes.get(
+        status,
+        "",
+    )
+
+
+def display_fields(fields):
     if not fields:
-        st.info("No information was found.")
+        st.info(
+            "No details were found."
+        )
         return
 
-    items = list(fields.items())
+    items = list(
+        fields.items()
+    )
 
-    for index in range(
+    for start in range(
         0,
         len(items),
         3,
     ):
-        columns = st.columns(3)
+        columns = st.columns(
+            3
+        )
 
         for column, item in zip(
             columns,
-            items[index:index + 3],
+            items[
+                start:
+                start + 3
+            ],
         ):
-            field_name, field_value = item
+            name, value = item
 
             label = (
-                field_name
-                .replace("_", " ")
+                name
+                .replace(
+                    "_",
+                    " ",
+                )
                 .title()
             )
 
@@ -518,15 +786,16 @@ def display_field_cards(fields):
                         <div class="field-label">
                             {safe(label)}
                         </div>
+
                         <div class="field-value">
-                            {safe(field_value)}
+                            {safe(value)}
                         </div>
                     </div>
                     """
                 )
 
 
-def display_validation_issues(issues):
+def display_issues(issues):
     if not issues:
         ui(
             """
@@ -535,6 +804,7 @@ def display_validation_issues(issues):
             </div>
             """
         )
+
         return
 
     for issue in issues:
@@ -543,29 +813,64 @@ def display_validation_issues(issues):
             "warning",
         )
 
-        message = issue.get(
-            "message",
-            "This document may need attention.",
+        css_class = (
+            "issue issue-error"
+            if severity
+            == "error"
+            else "issue"
         )
 
-        if severity == "error":
-            css_class = "issue-error"
-            title = "Needs attention"
-        else:
-            css_class = "issue-warning"
-            title = "Check recommended"
+        message = issue.get(
+            "message",
+            (
+                "This item "
+                "needs checking."
+            ),
+        )
 
         ui(
             f"""
             <div class="{css_class}">
-                <strong>{title}</strong><br>
                 {safe(message)}
             </div>
             """
         )
 
 
+def show_page_header(
+    title,
+    copy,
+):
+    ui(
+        f"""
+        <div class="page-header">
+            <div class="logo">
+                D
+            </div>
+
+            <div>
+                <div class="page-title">
+                    {safe(title)}
+                </div>
+
+                <div class="page-copy">
+                    {safe(copy)}
+                </div>
+            </div>
+        </div>
+        """
+    )
+
+
+# ---------------------------------------------------------
+# SIDEBAR
+# ---------------------------------------------------------
+
 def show_sidebar():
+    counts = (
+        get_library_counts()
+    )
+
     with st.sidebar:
         ui(
             """
@@ -574,297 +879,600 @@ def show_sidebar():
             </div>
 
             <div class="sidebar-copy">
-                Your smart workspace for invoices
-                and receipts.
+                Your document workspace
+            </div>
+
+            <div class="sidebar-label">
+                Menu
             </div>
             """
         )
 
-        documents = list_documents()
+        pages = [
+            (
+                "Home",
+                "⌂ Home",
+            ),
 
-        invoice_count = sum(
-            1
-            for document in documents
-            if document.get("document_type")
-            == "invoice"
-        )
+            (
+                "Review",
+                (
+                    "✓ Review"
+                    if counts[
+                        "pending_review"
+                    ] == 0
+                    else (
+                        "⚠ Review "
+                        f"({counts['pending_review']})"
+                    )
+                ),
+            ),
 
-        receipt_count = sum(
-            1
-            for document in documents
-            if document.get("document_type")
-            == "receipt"
-        )
+            (
+                "Documents",
+                "▤ Documents",
+            ),
+
+            (
+                "Zaki",
+                "✦ Ask Zaki",
+            ),
+        ]
+
+        for page, label in pages:
+            active = (
+                st.session_state.page
+                == page
+            )
+
+            if st.button(
+                label,
+                key=f"nav_{page}",
+                type=(
+                    "primary"
+                    if active
+                    else "secondary"
+                ),
+                use_container_width=True,
+            ):
+                if not active:
+                    go_to(
+                        page
+                    )
 
         ui(
             """
-            <div class="sidebar-section-label">
-                Your library
+            <div class="sidebar-label">
+                Library
             </div>
             """
         )
 
         ui(
             f"""
-            <div class="sidebar-card">
-                <div class="sidebar-card-label">
-                    Total documents
+            <div class="sidebar-stat">
+                <div class="sidebar-stat-label">
+                    Documents
                 </div>
 
-                <div class="sidebar-card-value">
-                    {len(documents)}
+                <div class="sidebar-stat-value">
+                    {counts["total"]}
                 </div>
             </div>
-            """
-        )
 
-        col1, col2 = st.columns(2)
+            <div class="sidebar-stat">
+                <div class="sidebar-stat-label">
+                    Waiting for review
+                </div>
 
-        with col1:
-            st.metric(
-                "Invoices",
-                invoice_count,
-            )
-
-        with col2:
-            st.metric(
-                "Receipts",
-                receipt_count,
-            )
-
-        st.write("")
-
-        ui(
-            """
-            <div class="sidebar-section-label">
-                Zaki
-            </div>
-
-            <div class="sidebar-card">
-                <div class="sidebar-tip">
-                    Ask questions like:<br><br>
-                    “How much did I spend?”<br>
-                    “Do I have duplicates?”<br>
-                    “Which supplier appears most?”
+                <div class="sidebar-stat-value">
+                    {counts["pending_review"]}
                 </div>
             </div>
             """
         )
 
 
-def scan_tab():
-    ui(
-        """
-        <div class="panel">
-            <div class="panel-title">
-                Upload a document
-            </div>
+# ---------------------------------------------------------
+# GRAPH PROGRESS
+# ---------------------------------------------------------
 
-            <div class="panel-copy">
-                Add an invoice or receipt and choose
-                what you want DocuAgent to find.
-            </div>
-        </div>
-        """
+NODE_PROGRESS = {
+    "load": (
+        8,
+        "Preparing document...",
+    ),
+
+    "ocr": (
+        35,
+        "Reading document...",
+    ),
+
+    "document_type": (
+        48,
+        "Identifying document...",
+    ),
+
+    "full_scan": (
+        68,
+        "Extracting details...",
+    ),
+
+    "partial_scan": (
+        68,
+        "Extracting requested details...",
+    ),
+
+    "quick_scan": (
+        82,
+        "Finding available details...",
+    ),
+
+    "normalization": (
+        82,
+        "Cleaning extracted data...",
+    ),
+
+    "validation": (
+        92,
+        "Checking details...",
+    ),
+
+    "save": (
+        100,
+        "Saving document...",
+    ),
+
+    "human_review": (
+        100,
+        "Preparing document for review...",
+    ),
+}
+
+
+def run_scan_with_progress(
+    initial_state,
+):
+    graph = (
+        get_document_graph()
     )
 
-    left, right = st.columns(
-        [1, 0.9],
-        gap="large",
+    progress = st.progress(
+        0
     )
 
-    with left:
-        uploaded_file = st.file_uploader(
-            "Choose invoice or receipt",
-            type=[
-                "png",
-                "jpg",
-                "jpeg",
-            ],
-        )
+    status = st.empty()
 
-        scan_choice = st.radio(
-            "What would you like to do?",
-            [
-                "Extract everything",
-                "Choose specific details",
-                "Preview available details",
-            ],
-            horizontal=True,
-        )
+    merged_state = dict(
+        initial_state
+    )
 
-        choice_map = {
-            "Extract everything": "full",
-            "Choose specific details": "partial",
-            "Preview available details": "quick",
-        }
+    last_percent = 0
 
-        scan_mode = choice_map[
-            scan_choice
-        ]
-
-        user_request = ""
-
-        if scan_mode == "full":
-            st.caption(
-                "Get a complete structured view "
-                "of the document."
-            )
-
-        elif scan_mode == "partial":
-            user_request = st.text_area(
-                "What information do you need?",
-                placeholder=(
-                    "Example: Supplier name, invoice "
-                    "number, total and currency"
-                ),
-                height=78,
-            )
-
-        else:
-            st.caption(
-                "See which useful details are available "
-                "before extracting them."
-            )
-
-        can_process = (
-            uploaded_file is not None
-        )
-
-        if (
-            scan_mode == "partial"
-            and not user_request.strip()
+    try:
+        for update in graph.stream(
+            initial_state,
+            stream_mode="updates",
         ):
-            can_process = False
+            if not isinstance(
+                update,
+                dict,
+            ):
+                continue
 
-        process = st.button(
-            "Process document",
-            type="primary",
-            use_container_width=True,
-            disabled=not can_process,
-        )
+            for (
+                node_name,
+                node_update,
+            ) in update.items():
 
-    with right:
-        if uploaded_file is not None:
-            st.image(
-                uploaded_file,
-                use_container_width=True,
-            )
-
-            st.caption(
-                uploaded_file.name
-            )
-
-        else:
-            ui(
-                """
-                <div class="empty-preview">
-                    <div>
-                        <div class="empty-preview-icon">
-                            ◫
-                        </div>
-
-                        Your document preview will
-                        appear here
-                    </div>
-                </div>
-                """
-            )
-
-    if process:
-        image_path = save_uploaded_file(
-            uploaded_file
-        )
-
-        state = {
-            "image_path": image_path,
-            "scan_mode": scan_mode,
-            "error": None,
-        }
-
-        if scan_mode == "partial":
-            state["user_request"] = (
-                user_request.strip()
-            )
-
-        graph = get_document_graph()
-
-        with st.spinner(
-            "Reading your document..."
-        ):
-            try:
-                result = graph.invoke(
-                    state
-                )
-
-                st.session_state.scan_output = (
-                    result
-                )
-
-                st.session_state.last_uploaded_name = (
-                    uploaded_file.name
-                )
-
-                if result.get("error"):
-                    st.error(
-                        "We couldn't process this "
-                        "document. Please try again."
-                    )
-
-                elif result.get(
-                    "needs_human_review"
+                if isinstance(
+                    node_update,
+                    dict,
                 ):
-                    st.warning(
-                        "Document processed. "
-                        "Some details need checking."
+                    merged_state.update(
+                        node_update
                     )
 
-                else:
-                    st.success(
-                        "Document processed successfully."
-                    )
-
-            except Exception:
-                st.session_state.scan_output = {
-                    "error": (
-                        "We couldn't process this document."
-                    )
-                }
-
-                st.error(
-                    "Something went wrong while "
-                    "processing the document."
+                (
+                    percent,
+                    message,
+                ) = NODE_PROGRESS.get(
+                    node_name,
+                    (
+                        50,
+                        "Processing document...",
+                    ),
                 )
 
+                last_percent = max(
+                    last_percent,
+                    percent,
+                )
 
-def results_tab():
-    result = st.session_state.scan_output
+                progress.progress(
+                    last_percent
+                )
 
-    if result is None:
-        ui(
-            """
-            <div class="panel">
-                <div class="panel-title">
-                    Your results will appear here
-                </div>
+                status.caption(
+                    message
+                )
 
-                <div class="panel-copy">
-                    Upload and process a document first.
-                </div>
-            </div>
-            """
+        if merged_state.get(
+            "error"
+        ):
+            progress.progress(
+                max(
+                    last_percent,
+                    10,
+                )
+            )
+
+            status.caption(
+                (
+                    "Processing stopped — "
+                    "see the reason below."
+                )
+            )
+
+        else:
+            progress.progress(
+                100
+            )
+
+            status.caption(
+                "Done."
+            )
+
+        return merged_state
+
+    except Exception as error:
+        progress.progress(
+            max(
+                last_percent,
+                10,
+            )
+        )
+
+        status.caption(
+            (
+                "Processing stopped — "
+                "see the reason below."
+            )
+        )
+
+        return {
+            **merged_state,
+
+            "error":
+                str(error),
+        }
+
+
+def process_scan(
+    image_path,
+    scan_mode,
+    user_request="",
+    document_type_override=None,
+):
+    config = {
+        "scan_mode":
+            scan_mode,
+
+        "user_request":
+            user_request,
+
+        "document_type_override":
+            document_type_override,
+    }
+
+    st.session_state[
+        "last_scan_config"
+    ] = config
+
+    initial_state = (
+        build_scan_state(
+            image_path=(
+                image_path
+            ),
+
+            scan_mode=(
+                scan_mode
+            ),
+
+            user_request=(
+                user_request
+            ),
+
+            document_type_override=(
+                document_type_override
+            ),
+        )
+    )
+
+    result = (
+        run_scan_with_progress(
+            initial_state
+        )
+    )
+
+    st.session_state[
+        "scan_output"
+    ] = result
+
+    return result
+
+
+# ---------------------------------------------------------
+# ERROR HANDLING
+# ---------------------------------------------------------
+
+def friendly_error_message(
+    error,
+):
+    text = str(
+        error or ""
+    )
+
+    lowered = (
+        text.lower()
+    )
+
+    if (
+        "unsupported document type"
+        in lowered
+    ):
+        return (
+            "DocuAgent couldn't confidently tell "
+            "whether this is an invoice or receipt. "
+            "Choose Invoice or Receipt manually above "
+            "and try again."
+        )
+
+    if (
+        "ocr returned no readable text"
+        in lowered
+    ):
+        return (
+            "DocuAgent couldn't find enough readable "
+            "text in this image. Try a clearer or "
+            "higher-resolution image."
+        )
+
+    if (
+        "ocr failed"
+        in lowered
+    ):
+        return (
+            "DocuAgent couldn't read this image. "
+            "Check that the file is a valid PNG or JPG "
+            "and try again."
+        )
+
+    if (
+        "full scan extraction failed"
+        in lowered
+        or "partial scan extraction failed"
+        in lowered
+        or "quick scan failed"
+        in lowered
+    ):
+        return (
+            "The document was read, but its details "
+            "couldn't be extracted successfully. "
+            "Try again or choose another extraction mode."
+        )
+
+    if (
+        "saving document failed"
+        in lowered
+        or "could not save"
+        in lowered
+    ):
+        return (
+            "The document was processed, but DocuAgent "
+            "couldn't save the result."
+        )
+
+    if (
+        "missing image path"
+        in lowered
+    ):
+        return (
+            "The uploaded document is no longer available. "
+            "Choose the file again."
+        )
+
+    return (
+        "DocuAgent couldn't finish processing this document. "
+        "You can retry without uploading it again."
+    )
+
+
+def retry_current_document():
+    image_path = (
+        st.session_state.get(
+            "last_image_path"
+        )
+    )
+
+    options = (
+        st.session_state.get(
+            "current_scan_options"
+        )
+        or st.session_state.get(
+            "last_scan_config"
+        )
+    )
+
+    if (
+        not image_path
+        or not options
+    ):
+        st.error(
+            (
+                "There is no document "
+                "available to retry."
+            )
         )
         return
 
-    if result.get("error"):
+    process_scan(
+        image_path=(
+            image_path
+        ),
+
+        scan_mode=(
+            options.get(
+                "scan_mode",
+                "full",
+            )
+        ),
+
+        user_request=(
+            options.get(
+                "user_request",
+                "",
+            )
+        ),
+
+        document_type_override=(
+            options.get(
+                "document_type_override"
+            )
+        ),
+    )
+
+
+# ---------------------------------------------------------
+# QUICK SCAN
+# ---------------------------------------------------------
+
+def get_quick_suggestions(
+    scan_result,
+):
+    if not isinstance(
+        scan_result,
+        dict,
+    ):
+        return []
+
+    candidates = (
+        scan_result.get(
+            "suggested_fields"
+        )
+        or scan_result.get(
+            "available_fields"
+        )
+    )
+
+    if isinstance(
+        candidates,
+        list,
+    ):
+        return [
+            str(item)
+            for item
+            in candidates
+        ]
+
+    if isinstance(
+        candidates,
+        dict,
+    ):
+        return list(
+            candidates.keys()
+        )
+
+    fields = scan_result.get(
+        "fields"
+    )
+
+    if isinstance(
+        fields,
+        list,
+    ):
+        return [
+            str(item)
+            for item
+            in fields
+        ]
+
+    if isinstance(
+        fields,
+        dict,
+    ):
+        return list(
+            fields.keys()
+        )
+
+    return []
+
+
+# ---------------------------------------------------------
+# SCAN RESULT
+# ---------------------------------------------------------
+
+def show_scan_result(
+    result,
+):
+    if not result:
+        return
+
+    error = result.get(
+        "error"
+    )
+
+    if error:
         ui(
-            """
+            f"""
             <div class="error-box">
-                We couldn't complete this document.
-                Try uploading it again or use a clearer image.
+                {safe(
+                    friendly_error_message(
+                        error
+                    )
+                )}
             </div>
             """
         )
+
+        retry_col, clear_col = (
+            st.columns(2)
+        )
+
+        with retry_col:
+            if st.button(
+                "↻ Try again",
+                type="primary",
+                use_container_width=True,
+                key="retry_failed_scan",
+            ):
+                retry_current_document()
+
+                st.rerun()
+
+        with clear_col:
+            if st.button(
+                "Choose another document",
+                use_container_width=True,
+                key="clear_failed_scan",
+            ):
+                clear_document_workspace()
+
+                st.rerun()
+
+        with st.expander(
+            "Why did processing stop?"
+        ):
+            st.write(
+                friendly_error_message(
+                    error
+                )
+            )
+
+            st.caption(
+                f"Processing reason: {error}"
+            )
+
         return
 
     scan_result = result.get(
@@ -872,19 +1480,19 @@ def results_tab():
         {},
     )
 
-    document_type = result.get(
-        "document_type",
-        scan_result.get(
-            "document_type",
-            "Document",
-        ),
-    )
-
     scan_mode = result.get(
         "scan_mode",
         scan_result.get(
             "scan_mode",
             "",
+        ),
+    )
+
+    document_type = result.get(
+        "document_type",
+        scan_result.get(
+            "document_type",
+            "document",
         ),
     )
 
@@ -897,147 +1505,184 @@ def results_tab():
         False,
     )
 
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        ui(
-            f"""
-            <div class="metric-card">
-                <div class="metric-label">
-                    Document
-                </div>
-
-                <div class="metric-value">
-                    {safe(str(document_type).title())}
-                </div>
-            </div>
-            """
-        )
-
-    with col2:
-        if scan_mode == "quick":
-            status = "Preview ready"
-        elif needs_review:
-            status = "Check required"
-        else:
-            status = "Ready"
-
-        ui(
-            f"""
-            <div class="metric-card">
-                <div class="metric-label">
-                    Status
-                </div>
-
-                <div class="metric-value">
-                    {safe(status)}
-                </div>
-            </div>
-            """
-        )
-
-    with col3:
-        if document_id is not None:
-            display_id = f"#{document_id}"
-        elif scan_mode == "quick":
-            display_id = "Preview"
-        else:
-            display_id = "Not saved"
-
-        ui(
-            f"""
-            <div class="metric-card">
-                <div class="metric-label">
-                    Reference
-                </div>
-
-                <div class="metric-value">
-                    {safe(display_id)}
-                </div>
-            </div>
-            """
-        )
-
-    st.write("")
-
     if needs_review:
         ui(
             """
             <div class="warning-box">
-                Some details need your attention before
-                relying on this document.
+                This document needs a quick review
+                before it can be approved.
             </div>
             """
         )
 
-    elif scan_mode == "quick":
+        if st.button(
+            "Review now",
+            type="primary",
+            use_container_width=True,
+        ):
+            go_to(
+                "Review",
+                document_id=(
+                    document_id
+                ),
+            )
+
+    elif (
+        scan_mode == "quick"
+    ):
         ui(
             """
             <div class="success-box">
-                ✓ Preview completed
+                ✓ Preview complete
             </div>
             """
         )
 
     else:
+        reference = (
+            f" #{document_id}"
+            if document_id
+            else ""
+        )
+
         ui(
-            """
+            f"""
             <div class="success-box">
-                ✓ Your document is ready
+                ✓ {safe(
+                    str(
+                        document_type
+                    ).title()
+                )}
+                ready{safe(reference)}
             </div>
             """
         )
 
-    st.write("")
-
     fields = scan_result.get(
-        "fields",
-        {},
+        "fields"
     )
 
-    if fields:
-        st.subheader(
-            "Document details"
+    if (
+        isinstance(
+            fields,
+            dict,
+        )
+        and fields
+        and scan_mode
+        != "quick"
+    ):
+        st.markdown(
+            "#### Details"
         )
 
-        display_field_cards(
+        display_fields(
             fields
         )
 
-    suggested_fields = (
-        scan_result.get(
-            "suggested_fields"
-        )
-        or scan_result.get(
-            "available_fields"
-        )
-    )
-
-    if suggested_fields:
-        st.subheader(
-            "Available details"
+    if scan_mode == "quick":
+        suggestions = (
+            get_quick_suggestions(
+                scan_result
+            )
         )
 
-        if isinstance(
-            suggested_fields,
-            dict,
-        ):
-            display_field_cards(
-                suggested_fields
+        if suggestions:
+            selected = (
+                st.multiselect(
+                    (
+                        "Choose the details "
+                        "you want to extract"
+                    ),
+
+                    options=(
+                        suggestions
+                    ),
+
+                    default=(
+                        suggestions
+                    ),
+
+                    format_func=(
+                        lambda value:
+                        value
+                        .replace(
+                            "_",
+                            " ",
+                        )
+                        .title()
+                    ),
+
+                    key=(
+                        "quick_selected_fields"
+                    ),
+                )
             )
 
-        elif isinstance(
-            suggested_fields,
-            list,
-        ):
-            for field in suggested_fields:
-                st.write(
-                    f"✓ {str(field).replace('_', ' ').title()}"
+            if st.button(
+                (
+                    "Extract selected "
+                    "details"
+                ),
+
+                type="primary",
+
+                use_container_width=True,
+
+                disabled=(
+                    len(selected)
+                    == 0
+                ),
+            ):
+                request = (
+                    "Extract only these fields: "
+                    + ", ".join(
+                        selected
+                    )
                 )
 
+                previous_config = (
+                    st.session_state.get(
+                        "last_scan_config"
+                    )
+                    or {}
+                )
+
+                result = (
+                    process_scan(
+                        image_path=(
+                            st.session_state[
+                                "last_image_path"
+                            ]
+                        ),
+
+                        scan_mode=(
+                            "partial"
+                        ),
+
+                        user_request=(
+                            request
+                        ),
+
+                        document_type_override=(
+                            previous_config.get(
+                                "document_type_override"
+                            )
+                        ),
+                    )
+                )
+
+                st.session_state[
+                    "scan_output"
+                ] = result
+
+                st.rerun()
+
         else:
-            st.write(
-                suggested_fields
+            st.info(
+                (
+                    "No suggested details were found. "
+                    "Use Specific details instead."
+                )
             )
 
     issues = result.get(
@@ -1045,279 +1690,1353 @@ def results_tab():
         [],
     )
 
-    if scan_mode != "quick":
-        st.subheader(
-            "Checks"
+    if (
+        issues
+        and scan_mode
+        != "quick"
+    ):
+        st.markdown(
+            "#### Checks"
         )
 
-        display_validation_issues(
+        display_issues(
             issues
         )
 
+    if (
+        document_id
+        and not needs_review
+        and scan_mode
+        != "quick"
+    ):
+        if st.button(
+            "Open saved document",
+            use_container_width=True,
+        ):
+            go_to(
+                "Documents",
+                document_id=(
+                    document_id
+                ),
+            )
+
+
+# ---------------------------------------------------------
+# HOME
+# ---------------------------------------------------------
+
+def home_page():
+    show_page_header(
+        "DocuAgent",
+        (
+            "Process documents and get "
+            "answers in one place."
+        ),
+    )
+
+    ui(
+        """
+        <div class="home-intro">
+            <div class="home-intro-label">
+                Document workspace
+            </div>
+
+            <div class="home-intro-title">
+                Turn paperwork into answers.
+            </div>
+
+            <div class="home-intro-copy">
+                Upload an invoice or receipt,
+                choose what you need, and DocuAgent
+                takes care of the rest.
+            </div>
+        </div>
+        """
+    )
+
+    main, side = st.columns(
+        [
+            1.55,
+            0.72,
+        ],
+        gap="large",
+    )
+
+    with main:
+        ui(
+            """
+            <div class="section-heading">
+                Process a document
+            </div>
+
+            <div class="section-copy">
+                Upload an invoice or receipt.
+            </div>
+            """
+        )
+
+        uploader_key = (
+            "document_uploader_"
+            f"{st.session_state['uploader_version']}"
+        )
+
+        uploaded_file = (
+            st.file_uploader(
+                "Document",
+
+                type=[
+                    "png",
+                    "jpg",
+                    "jpeg",
+                ],
+
+                label_visibility=(
+                    "collapsed"
+                ),
+
+                key=uploader_key,
+            )
+        )
+
+        if uploaded_file is not None:
+            signature = (
+                uploaded_signature(
+                    uploaded_file
+                )
+            )
+
+            if (
+                st.session_state[
+                    "last_upload_signature"
+                ]
+                != signature
+            ):
+                st.session_state[
+                    "scan_output"
+                ] = None
+
+                st.session_state[
+                    "last_image_path"
+                ] = None
+
+                st.session_state[
+                    "last_scan_config"
+                ] = None
+
+                st.session_state[
+                    "last_upload_signature"
+                ] = signature
+
+                st.session_state[
+                    "last_uploaded_name"
+                ] = (
+                    uploaded_file.name
+                )
+
+        option_left, option_right = (
+            st.columns(
+                [
+                    1.55,
+                    0.65,
+                ]
+            )
+        )
+
+        with option_left:
+            mode_label = st.radio(
+                "What do you need?",
+
+                [
+                    "Everything",
+                    "Specific details",
+                    "Quick preview",
+                ],
+
+                horizontal=True,
+            )
+
+        with option_right:
+            type_label = (
+                st.selectbox(
+                    "Document type",
+
+                    [
+                        "Auto detect",
+                        "Invoice",
+                        "Receipt",
+                    ],
+                )
+            )
+
+        mode_map = {
+            "Everything":
+                "full",
+
+            "Specific details":
+                "partial",
+
+            "Quick preview":
+                "quick",
+        }
+
+        type_map = {
+            "Auto detect":
+                None,
+
+            "Invoice":
+                "invoice",
+
+            "Receipt":
+                "receipt",
+        }
+
+        scan_mode = (
+            mode_map[
+                mode_label
+            ]
+        )
+
+        document_type_override = (
+            type_map[
+                type_label
+            ]
+        )
+
+        user_request = ""
+
+        if scan_mode == "partial":
+            user_request = (
+                st.text_input(
+                    "What should I extract?",
+
+                    placeholder=(
+                        "e.g. supplier, invoice number, "
+                        "total and currency"
+                    ),
+                )
+            )
+
+        elif scan_mode == "full":
+            st.caption(
+                (
+                    "Extract all supported "
+                    "details."
+                )
+            )
+
+        else:
+            st.caption(
+                (
+                    "See what's available "
+                    "before choosing."
+                )
+            )
+
+        st.session_state[
+            "current_scan_options"
+        ] = {
+            "scan_mode":
+                scan_mode,
+
+            "user_request":
+                user_request,
+
+            "document_type_override":
+                document_type_override,
+        }
+
+        ready = (
+            uploaded_file
+            is not None
+        )
+
+        if (
+            scan_mode
+            == "partial"
+            and not user_request.strip()
+        ):
+            ready = False
+
+        if st.button(
+            "Process document",
+            type="primary",
+            use_container_width=True,
+            disabled=(
+                not ready
+            ),
+        ):
+            # Clear any previous failed result
+            # before starting the new run.
+            st.session_state[
+                "scan_output"
+            ] = None
+
+            image_path = (
+                save_uploaded_file(
+                    uploaded_file
+                )
+            )
+
+            st.session_state[
+                "last_image_path"
+            ] = image_path
+
+            st.session_state[
+                "last_uploaded_name"
+            ] = (
+                uploaded_file.name
+            )
+
+            result = (
+                process_scan(
+                    image_path=(
+                        image_path
+                    ),
+
+                    scan_mode=(
+                        scan_mode
+                    ),
+
+                    user_request=(
+                        user_request
+                    ),
+
+                    document_type_override=(
+                        document_type_override
+                    ),
+                )
+            )
+
+            st.session_state[
+                "scan_output"
+            ] = result
+
+        if (
+            st.session_state[
+                "scan_output"
+            ]
+        ):
+            st.markdown(
+                "### Result"
+            )
+
+            show_scan_result(
+                st.session_state[
+                    "scan_output"
+                ]
+            )
+
+    with side:
+        counts = (
+            get_library_counts()
+        )
+
+        ui(
+            f"""
+            <div class="mini-card">
+                <div class="mini-label">
+                    Waiting for you
+                </div>
+
+                <div class="mini-value">
+                    {counts["pending_review"]}
+                    to review
+                </div>
+            </div>
+            """
+        )
+
+        if (
+            counts[
+                "pending_review"
+            ] > 0
+        ):
+            if st.button(
+                "Open review queue",
+                use_container_width=True,
+            ):
+                go_to(
+                    "Review"
+                )
+
+        ui(
+            """
+            <div class="zaki-box">
+                <div class="zaki-title">
+                    ✦ Ask Zaki
+                </div>
+
+                <div class="zaki-copy">
+                    Get an answer from all
+                    of your saved documents.
+                </div>
+            </div>
+            """
+        )
+
+        quick_question = (
+            st.text_input(
+                "Quick question",
+
+                placeholder=(
+                    "How much did I spend?"
+                ),
+
+                label_visibility=(
+                    "collapsed"
+                ),
+
+                key=(
+                    "home_zaki_question"
+                ),
+            )
+        )
+
+        if st.button(
+            "Ask Zaki",
+
+            use_container_width=True,
+
+            disabled=(
+                not quick_question.strip()
+            ),
+        ):
+            with st.spinner(
+                (
+                    "Checking your "
+                    "documents..."
+                )
+            ):
+                result = (
+                    run_zaki(
+                        quick_question.strip()
+                    )
+                )
+
+            st.session_state[
+                "home_zaki_answer"
+            ] = result.get(
+                "answer"
+            )
+
+        if st.session_state[
+            "home_zaki_answer"
+        ]:
+            st.info(
+                st.session_state[
+                    "home_zaki_answer"
+                ]
+            )
+
+        st.markdown(
+            "#### Recent"
+        )
+
+        recent = (
+            list_document_summaries(
+                limit=3
+            )
+        )
+
+        if not recent:
+            st.caption(
+                "No documents yet."
+            )
+
+        for document in recent:
+            title = (
+                document.get(
+                    "party"
+                )
+                or document.get(
+                    "document_number"
+                )
+                or (
+                    f"{document['document_type'].title()} "
+                    f"#{document['id']}"
+                )
+            )
+
+            metadata = (
+                document.get(
+                    "document_number"
+                )
+                or document.get(
+                    "document_date"
+                )
+                or (
+                    f"Reference "
+                    f"#{document['id']}"
+                )
+            )
+
+            ui(
+                f"""
+                <div class="document-row">
+                    <div class="document-row-title">
+                        {safe(title)}
+                    </div>
+
+                    <div class="document-row-meta">
+                        {safe(metadata)}
+                    </div>
+                </div>
+                """
+            )
+
+            if st.button(
+                "Open",
+                key=(
+                    f"recent_"
+                    f"{document['id']}"
+                ),
+                use_container_width=True,
+            ):
+                go_to(
+                    "Documents",
+                    document_id=(
+                        document["id"]
+                    ),
+                )
+
+
+# ---------------------------------------------------------
+# REVIEW
+# ---------------------------------------------------------
+
+def review_page():
+    show_page_header(
+        "Review",
+        (
+            "Check documents that "
+            "need your attention."
+        ),
+    )
+
+    if st.session_state[
+        "review_message"
+    ]:
+        st.success(
+            st.session_state[
+                "review_message"
+            ]
+        )
+
+        st.session_state[
+            "review_message"
+        ] = None
+
+    documents = (
+        list_review_documents()
+    )
+
+    if not documents:
+        st.session_state.pop(
+            "review_document_select",
+            None,
+        )
+
+        ui(
+            """
+            <div class="success-box">
+                ✓ You're all caught up.
+                No documents are waiting
+                for review.
+            </div>
+            """
+        )
+
+        return
+
+    review_items = []
+
+    for document in documents:
+        fields = (
+            get_document_fields(
+                document[
+                    "id"
+                ]
+            )
+        )
+
+        party = (
+            fields.get(
+                "supplier_name"
+            )
+            or fields.get(
+                "merchant_name"
+            )
+        )
+
+        number = (
+            fields.get(
+                "invoice_number"
+            )
+            or fields.get(
+                "receipt_number"
+            )
+        )
+
+        label = (
+            party
+            or number
+            or (
+                f"{document['document_type'].title()} "
+                f"#{document['id']}"
+            )
+        )
+
+        if (
+            party
+            and number
+        ):
+            label = (
+                f"{party} · {number}"
+            )
+
+        review_items.append(
+            (
+                document,
+                fields,
+                label,
+            )
+        )
+
+    ids = [
+        item[0]["id"]
+        for item
+        in review_items
+    ]
+
+    if (
+        "review_document_select"
+        in st.session_state
+        and st.session_state[
+            "review_document_select"
+        ]
+        not in ids
+    ):
+        st.session_state[
+            "review_document_select"
+        ] = ids[0]
+
+    selected_id = (
+        st.selectbox(
+            "Document to review",
+
+            options=ids,
+
+            format_func=(
+                lambda document_id:
+                next(
+                    item[2]
+                    for item
+                    in review_items
+                    if item[0][
+                        "id"
+                    ]
+                    == document_id
+                )
+            ),
+
+            key=(
+                "review_document_select"
+            ),
+        )
+    )
+
+    (
+        document,
+        fields,
+        label,
+    ) = next(
+        item
+        for item
+        in review_items
+        if item[0][
+            "id"
+        ] == selected_id
+    )
+
+    document_id = (
+        document["id"]
+    )
+
+    issues = (
+        get_document_issues(
+            document_id
+        )
+    )
+
+    st.markdown(
+        f"### {label}"
+    )
+
+    display_issues(
+        issues
+    )
+
+    st.markdown(
+        "#### Check and edit details"
+    )
+
+    edited_fields = {}
+
+    items = list(
+        fields.items()
+    )
+
+    for start in range(
+        0,
+        len(items),
+        2,
+    ):
+        columns = (
+            st.columns(
+                2
+            )
+        )
+
+        for column, item in zip(
+            columns,
+            items[
+                start:
+                start + 2
+            ],
+        ):
+            (
+                field_name,
+                field_value,
+            ) = item
+
+            with column:
+                value = (
+                    st.text_input(
+                        field_name
+                        .replace(
+                            "_",
+                            " ",
+                        )
+                        .title(),
+
+                        value=(
+                            ""
+                            if field_value
+                            is None
+                            else str(
+                                field_value
+                            )
+                        ),
+
+                        key=(
+                            f"review_"
+                            f"{document_id}_"
+                            f"{field_name}"
+                        ),
+                    )
+                )
+
+                edited_fields[
+                    field_name
+                ] = (
+                    None
+                    if not value.strip()
+                    else value.strip()
+                )
+
+    note = st.text_area(
+        "Review note",
+
+        placeholder=(
+            "Optional note about "
+            "your decision"
+        ),
+
+        key=(
+            f"review_note_"
+            f"{document_id}"
+        ),
+    )
+
+    approve_col, reject_col = (
+        st.columns(
+            2
+        )
+    )
+
+    with approve_col:
+        approve = st.button(
+            "Approve changes",
+            type="primary",
+            use_container_width=True,
+        )
+
+    with reject_col:
+        reject = st.button(
+            "Reject document",
+            use_container_width=True,
+        )
+
+    if approve:
+        result = (
+            approve_reviewed_document(
+                document_id,
+
+                edited_fields=(
+                    edited_fields
+                ),
+
+                note=(
+                    note.strip()
+                    or None
+                ),
+            )
+        )
+
+        if result.get(
+            "success"
+        ):
+            st.session_state[
+                "review_message"
+            ] = (
+                f"{label} "
+                "was approved."
+            )
+
+            st.session_state.pop(
+                "review_document_select",
+                None,
+            )
+
+            st.rerun()
+
+        else:
+            st.error(
+                (
+                    "Some problems still "
+                    "need to be fixed "
+                    "before approval."
+                )
+            )
+
+            display_issues(
+                result.get(
+                    "validation_issues",
+                    [],
+                )
+            )
+
+    if reject:
+        result = (
+            reject_reviewed_document(
+                document_id,
+
+                note=(
+                    note.strip()
+                    or None
+                ),
+            )
+        )
+
+        if result.get(
+            "success"
+        ):
+            st.session_state[
+                "review_message"
+            ] = (
+                f"{label} "
+                "was rejected."
+            )
+
+            st.session_state.pop(
+                "review_document_select",
+                None,
+            )
+
+            st.rerun()
+
+        else:
+            st.error(
+                (
+                    "The document could "
+                    "not be rejected."
+                )
+            )
+
+
+# ---------------------------------------------------------
+# DOCUMENT LIBRARY
+# ---------------------------------------------------------
+
+def documents_page():
+    show_page_header(
+        "Documents",
+        (
+            "Find and open anything "
+            "you've processed."
+        ),
+    )
+
+    summaries = (
+        list_document_summaries()
+    )
+
+    if not summaries:
+        st.info(
+            (
+                "Your document "
+                "library is empty."
+            )
+        )
+
+        return
+
+    counts = (
+        get_library_counts()
+    )
+
+    a, b, c, d = (
+        st.columns(
+            4
+        )
+    )
+
+    with a:
+        st.metric(
+            "All",
+            counts[
+                "total"
+            ],
+        )
+
+    with b:
+        st.metric(
+            "Approved",
+            counts[
+                "approved"
+            ],
+        )
+
+    with c:
+        st.metric(
+            "Review",
+            counts[
+                "pending_review"
+            ],
+        )
+
+    with d:
+        st.metric(
+            "Rejected",
+            counts[
+                "rejected"
+            ],
+        )
+
+    (
+        search_col,
+        status_col,
+    ) = st.columns(
+        [
+            1.6,
+            0.6,
+        ]
+    )
+
+    with search_col:
+        search = (
+            st.text_input(
+                "Search",
+
+                placeholder=(
+                    "Supplier, document number, "
+                    "date or reference"
+                ),
+            )
+        )
+
+    with status_col:
+        status_filter = (
+            st.selectbox(
+                "Status",
+
+                [
+                    "All",
+                    "Approved",
+                    "Needs review",
+                    "Rejected",
+                ],
+            )
+        )
+
+    status_map = {
+        "Approved":
+            "approved",
+
+        "Needs review":
+            "pending_review",
+
+        "Rejected":
+            "rejected",
+    }
+
+    filtered = []
+
+    for document in summaries:
+        if (
+            status_filter
+            != "All"
+            and document.get(
+                "review_status"
+            )
+            != status_map[
+                status_filter
+            ]
+        ):
+            continue
+
+        searchable = " ".join(
+            str(value)
+            for value in [
+                document.get(
+                    "id"
+                ),
+
+                document.get(
+                    "party"
+                ),
+
+                document.get(
+                    "document_number"
+                ),
+
+                document.get(
+                    "document_date"
+                ),
+
+                document.get(
+                    "document_type"
+                ),
+
+                document.get(
+                    "currency"
+                ),
+            ]
+            if value
+            not in (
+                None,
+                "",
+            )
+        ).lower()
+
+        if (
+            search.strip()
+            and search
+            .lower()
+            .strip()
+            not in searchable
+        ):
+            continue
+
+        filtered.append(
+            document
+        )
+
+    if not filtered:
+        st.info(
+            (
+                "No documents match "
+                "your search."
+            )
+        )
+
+        return
+
+    ids = [
+        document["id"]
+        for document
+        in filtered
+    ]
+
+    if (
+        "document_select"
+        in st.session_state
+        and st.session_state[
+            "document_select"
+        ]
+        not in ids
+    ):
+        st.session_state[
+            "document_select"
+        ] = ids[0]
+
+    selected_id = (
+        st.selectbox(
+            "Open document",
+
+            options=ids,
+
+            format_func=(
+                lambda doc_id:
+                next(
+                    (
+                        (
+                            document.get(
+                                "party"
+                            )
+                            or document.get(
+                                "document_number"
+                            )
+                            or document[
+                                "document_type"
+                            ].title()
+                        )
+                        + " · "
+                        + (
+                            document.get(
+                                "document_number"
+                            )
+                            or (
+                                f"#{doc_id}"
+                            )
+                        )
+                    )
+                    for document
+                    in filtered
+                    if document[
+                        "id"
+                    ] == doc_id
+                )
+            ),
+
+            key=(
+                "document_select"
+            ),
+        )
+    )
+
+    document = (
+        get_document(
+            selected_id
+        )
+    )
+
+    fields = (
+        get_document_fields(
+            selected_id
+        )
+    )
+
+    issues = (
+        get_document_issues(
+            selected_id
+        )
+    )
+
+    selected_summary = next(
+        item
+        for item
+        in filtered
+        if item[
+            "id"
+        ] == selected_id
+    )
+
+    status = document.get(
+        "review_status",
+        "approved",
+    )
+
+    left, right = (
+        st.columns(
+            [
+                1.5,
+                0.5,
+            ]
+        )
+    )
+
+    with left:
+        title = (
+            selected_summary.get(
+                "party"
+            )
+            or selected_summary.get(
+                "document_number"
+            )
+            or document[
+                "document_type"
+            ].title()
+        )
+
+        st.markdown(
+            f"### {title}"
+        )
+
+        st.caption(
+            (
+                f"Reference "
+                f"#{selected_id}"
+            )
+        )
+
+    with right:
+        ui(
+            f"""
+            <div class="mini-card">
+                <div class="mini-label">
+                    Status
+                </div>
+
+                <div class="mini-value {status_class(status)}">
+                    {safe(
+                        status_label(
+                            status
+                        )
+                    )}
+                </div>
+            </div>
+            """
+        )
+
+    st.markdown(
+        "#### Details"
+    )
+
+    display_fields(
+        fields
+    )
+
+    if issues:
+        st.markdown(
+            "#### Checks"
+        )
+
+        display_issues(
+            issues
+        )
+
+    if (
+        status
+        == "pending_review"
+    ):
+        if st.button(
+            "Open in Review",
+            type="primary",
+        ):
+            go_to(
+                "Review",
+                document_id=(
+                    selected_id
+                ),
+            )
+
     payload = {
-        "document_type": document_type,
-        "fields": fields,
-        "checks": issues,
+        "reference":
+            selected_id,
+
+        "document_type":
+            document.get(
+                "document_type"
+            ),
+
+        "status":
+            status,
+
+        "fields":
+            fields,
+
+        "checks":
+            issues,
     }
 
     st.download_button(
         "Download document data",
+
         data=json.dumps(
             payload,
             indent=2,
             ensure_ascii=False,
             default=str,
         ),
-        file_name="document_data.json",
-        mime="application/json",
-    )
 
+        file_name=(
+            f"document_"
+            f"{selected_id}.json"
+        ),
 
-def library_tab():
-    ui(
-        """
-        <div class="panel">
-            <div class="panel-title">
-                Your documents
-            </div>
-
-            <div class="panel-copy">
-                Browse and review documents you've
-                already processed.
-            </div>
-        </div>
-        """
-    )
-
-    documents = list_documents()
-
-    if not documents:
-        st.info(
-            "Your document library is empty."
-        )
-        return
-
-    document_records = []
-
-    for document in documents:
-        fields = get_document_fields(
-            document["id"]
-        )
-
-        issues = get_document_issues(
-            document["id"]
-        )
-
-        document_records.append(
-            {
-                "document": document,
-                "fields": fields,
-                "issues": issues,
-            }
-        )
-
-    search_query = st.text_input(
-        "Search",
-        placeholder=(
-            "Search supplier, document number, "
-            "date, type or reference"
+        mime=(
+            "application/json"
         ),
     )
 
-    if search_query.strip():
-        query = (
-            search_query
-            .strip()
-            .lower()
-        )
 
-        filtered_records = []
+# ---------------------------------------------------------
+# ZAKI
+# ---------------------------------------------------------
 
-        for record in document_records:
-            document = record["document"]
-            fields = record["fields"]
-
-            searchable_values = [
-                document.get("id"),
-                document.get(
-                    "document_type"
-                ),
-                fields.get(
-                    "supplier_name"
-                ),
-                fields.get(
-                    "merchant_name"
-                ),
-                fields.get(
-                    "invoice_number"
-                ),
-                fields.get(
-                    "receipt_number"
-                ),
-                fields.get("date"),
-                fields.get("currency"),
-            ]
-
-            searchable_text = " ".join(
-                str(value)
-                for value in searchable_values
-                if value not in (None, "")
-            ).lower()
-
-            if query in searchable_text:
-                filtered_records.append(
-                    record
-                )
-
-    else:
-        filtered_records = (
-            document_records
-        )
-
-    st.caption(
-        f"{len(filtered_records)} documents"
+def zaki_page():
+    show_page_header(
+        "Zaki",
+        (
+            "Ask questions across "
+            "your saved documents."
+        ),
     )
 
-    for record in filtered_records:
-        document = record["document"]
-        fields = record["fields"]
-        issues = record["issues"]
-
-        document_id = document["id"]
-
-        display_name = (
-            get_document_display_name(
-                document,
-                fields,
-            )
-        )
-
-        with st.expander(
-            display_name
-        ):
-            top1, top2, top3 = (
-                st.columns(3)
-            )
-
-            with top1:
-                st.caption(
-                    "Reference"
-                )
-
-                st.write(
-                    f"#{document_id}"
-                )
-
-            with top2:
-                st.caption(
-                    "Type"
-                )
-
-                st.write(
-                    str(
-                        document.get(
-                            "document_type",
-                            "Document",
-                        )
-                    ).title()
-                )
-
-            with top3:
-                st.caption(
-                    "Added"
-                )
-
-                st.write(
-                    document.get(
-                        "created_at",
-                        "Unknown",
-                    )
-                )
-
-            st.markdown(
-                "#### Details"
-            )
-
-            display_field_cards(
-                fields
-            )
-
-            st.markdown(
-                "#### Checks"
-            )
-
-            display_validation_issues(
-                issues
-            )
-
-            payload = {
-                "reference": document_id,
-                "type": document.get(
-                    "document_type"
-                ),
-                "fields": fields,
-                "checks": issues,
-            }
-
-            st.download_button(
-                "Download data",
-                data=json.dumps(
-                    payload,
-                    indent=2,
-                    ensure_ascii=False,
-                    default=str,
-                ),
-                file_name=(
-                    f"document_{document_id}.json"
-                ),
-                mime="application/json",
-                key=(
-                    f"download_{document_id}"
-                ),
-            )
-
-
-def zaki_tab():
     ui(
         """
-        <div class="zaki-card">
+        <div class="zaki-box">
             <div class="zaki-title">
-                ✦ Meet Zaki
+                ✦ What would you like to know?
             </div>
 
             <div class="zaki-copy">
-                Ask questions about your saved invoices
-                and receipts in plain language.
+                Ask about spending, tax,
+                suppliers, duplicates,
+                contradictions and more.
             </div>
         </div>
         """
-    )
-
-    st.markdown(
-        "##### Suggestions"
     )
 
     examples = [
         "How much did I spend?",
         "What was my total tax?",
-        "Which supplier appears most often?",
-        "Do I have duplicate invoices?",
+        (
+            "Which supplier "
+            "appears most often?"
+        ),
+        (
+            "Do I have "
+            "duplicate invoices?"
+        ),
     ]
 
-    columns = st.columns(4)
+    columns = (
+        st.columns(
+            4
+        )
+    )
 
     selected_example = None
 
-    for column, example in zip(
+    for (
+        column,
+        example,
+    ) in zip(
         columns,
         examples,
     ):
         with column:
             if st.button(
                 example,
+
                 key=(
-                    f"example_{example}"
+                    "zaki_example_"
+                    f"{example}"
                 ),
+
                 use_container_width=True,
             ):
                 selected_example = (
@@ -1325,38 +3044,58 @@ def zaki_tab():
                 )
 
     for message in (
-        st.session_state.zaki_messages
+        st.session_state[
+            "zaki_messages"
+        ]
     ):
         avatar = (
             "✨"
-            if message["role"]
-            == "assistant"
+            if message[
+                "role"
+            ] == "assistant"
             else None
         )
 
         with st.chat_message(
-            message["role"],
-            avatar=avatar,
+            message[
+                "role"
+            ],
+
+            avatar=(
+                avatar
+            ),
         ):
             st.markdown(
-                message["content"]
+                message[
+                    "content"
+                ]
             )
 
-    typed_question = st.chat_input(
-        "Ask Zaki about your documents..."
+    typed = (
+        st.chat_input(
+            (
+                "Ask Zaki about "
+                "your documents..."
+            )
+        )
     )
 
     question = (
         selected_example
         if selected_example
-        else typed_question
+        else typed
     )
 
     if question:
-        st.session_state.zaki_messages.append(
+        st.session_state[
+            "zaki_messages"
+        ].append(
             {
-                "role": "user",
-                "content": question,
+                "role":
+                    "user",
+
+                "content":
+                    question,
             }
         )
 
@@ -1372,19 +3111,26 @@ def zaki_tab():
             avatar="✨",
         ):
             with st.spinner(
-                "Zaki is checking your documents..."
+                (
+                    "Checking your "
+                    "documents..."
+                )
             ):
                 try:
-                    result = run_zaki(
-                        question
+                    result = (
+                        run_zaki(
+                            question
+                        )
                     )
 
-                    answer = result.get(
-                        "answer",
-                        (
-                            "I couldn't find an answer "
-                            "for that question."
-                        ),
+                    answer = (
+                        result.get(
+                            "answer"
+                        )
+                        or (
+                            "I couldn't "
+                            "find an answer."
+                        )
                     )
 
                     st.markdown(
@@ -1393,7 +3139,8 @@ def zaki_tab():
 
                 except Exception:
                     answer = (
-                        "I couldn't complete that request. "
+                        "I couldn't complete "
+                        "that request. "
                         "Please try again."
                     )
 
@@ -1401,25 +3148,41 @@ def zaki_tab():
                         answer
                     )
 
-        st.session_state.zaki_messages.append(
+        st.session_state[
+            "zaki_messages"
+        ].append(
             {
-                "role": "assistant",
-                "content": answer,
+                "role":
+                    "assistant",
+
+                "content":
+                    answer,
             }
         )
 
-    if len(
-        st.session_state.zaki_messages
-    ) > 1:
+    if (
+        len(
+            st.session_state[
+                "zaki_messages"
+            ]
+        )
+        > 1
+    ):
         if st.button(
             "Clear conversation"
         ):
-            st.session_state.zaki_messages = [
+            st.session_state[
+                "zaki_messages"
+            ] = [
                 {
-                    "role": "assistant",
+                    "role":
+                        "assistant",
+
                     "content": (
-                        "Hi, I'm Zaki. Ask me anything "
-                        "about your saved documents."
+                        "Hi, I'm Zaki. "
+                        "Ask me anything "
+                        "about your saved "
+                        "documents."
                     ),
                 }
             ]
@@ -1427,73 +3190,30 @@ def zaki_tab():
             st.rerun()
 
 
-initialize_session_state()
+# ---------------------------------------------------------
+# RUN APP
+# ---------------------------------------------------------
+
+initialize_state()
+
 show_sidebar()
 
 
-ui(
-    """
-    <div class="brand">
-        <div class="brand-mark">
-            D
-        </div>
-
-        <div>
-            <div class="brand-name">
-                DocuAgent
-            </div>
-
-            <div class="brand-tagline">
-                Smarter document management
-            </div>
-        </div>
-    </div>
-    """
-)
-
-
-ui(
-    """
-    <div class="hero">
-        <div class="hero-eyebrow">
-            Your document workspace
-        </div>
-
-        <div class="hero-title">
-            Turn paperwork into answers.
-        </div>
-
-        <div class="hero-copy">
-            Upload invoices and receipts, capture the
-            information you need, keep everything organised,
-            and ask Zaki questions across your documents.
-        </div>
-    </div>
-    """
-)
-
-
-tab_upload, tab_results, tab_documents, tab_zaki = st.tabs(
-    [
-        "Upload",
-        "Results",
-        "Documents",
-        "✦ Ask Zaki",
+page = (
+    st.session_state[
+        "page"
     ]
 )
 
 
-with tab_upload:
-    scan_tab()
+if page == "Home":
+    home_page()
 
+elif page == "Review":
+    review_page()
 
-with tab_results:
-    results_tab()
+elif page == "Documents":
+    documents_page()
 
-
-with tab_documents:
-    library_tab()
-
-
-with tab_zaki:
-    zaki_tab()
+elif page == "Zaki":
+    zaki_page()

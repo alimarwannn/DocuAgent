@@ -1,69 +1,137 @@
-from src.graph import build_document_graph
+from src.graph import (
+    build_document_graph,
+)
 
 
 graph = build_document_graph()
 
-initial_state = {
-    "image_path": "samples/receipt_1.jpg",
-    "scan_mode": "full",
-}
 
-result = graph.invoke(initial_state)
+result = graph.invoke(
+    {
+        "image_path":
+            "samples/receipt_1.jpg",
 
-print("FULL RESULT:", result)
+        "scan_mode":
+            "full",
 
-assert result is not None
-assert "raw_ocr_text" in result
-assert "document_type" in result
-
-if result.get("error"):
-    raise AssertionError(
-        f"Graph failed: {result['error']}"
-    )
-
-assert "scan_result" in result
-
-fields = result["scan_result"]["fields"]
-
-assert fields["date"] == "2019-01-15"
-assert fields["currency"] == "SAR"
-
-issue_types = [
-    issue["issue_type"]
-    for issue in result.get(
-        "validation_issues",
-        [],
-    )
-]
-
-assert "invalid_date" not in issue_types
-assert "invalid_currency" not in issue_types
-
-if result.get("needs_human_review"):
-    print("Document sent to human review.")
-else:
-    assert "document_id" in result
-    print(
-        "Document ID:",
-        result["document_id"],
-    )
-
-print(
-    "Document type:",
-    result["document_type"],
+        "error":
+            None,
+    }
 )
 
+
 print(
-    "Validation issues:",
+    "FULL RESULT:",
+    result,
+)
+
+
+assert (
+    result["document_type"]
+    == "receipt"
+)
+
+
+scan_result = (
+    result["scan_result"]
+)
+
+assert (
+    scan_result["document_type"]
+    == "receipt"
+)
+
+assert (
+    scan_result["scan_mode"]
+    == "full"
+)
+
+
+fields = (
+    scan_result["fields"]
+)
+
+
+assert (
+    fields["merchant_name"]
+    == "OJC MARKETING SDN BHD"
+)
+
+
+assert (
+    fields["receipt_number"]
+    == "PEGIV-1030765"
+)
+
+
+assert (
+    fields["date"]
+    == "2019-01-15"
+)
+
+
+assert (
+    float(
+        fields["subtotal"]
+    )
+    == 193.0
+)
+
+
+assert (
+    float(
+        fields["tax"]
+    )
+    == 0.0
+)
+
+
+assert (
+    float(
+        fields["total"]
+    )
+    == 193.0
+)
+
+
+# The OCR does not explicitly show a
+# supported currency code or symbol.
+# DocuAgent must not invent one.
+assert (
+    fields["currency"]
+    is None
+)
+
+
+# Currency is unknown, so this full scan
+# should safely require human review.
+assert (
+    result[
+        "needs_human_review"
+    ]
+    is True
+)
+
+
+issues = (
     result.get(
         "validation_issues",
         [],
-    ),
+    )
 )
+
+
+assert any(
+    issue[
+        "issue_type"
+    ]
+    == "missing_currency"
+
+    for issue
+    in issues
+)
+
 
 print(
-    "Scan result:",
-    result["scan_result"],
+    "Full graph grounding test passed."
 )
-
-print("Full LangGraph run passed.")
