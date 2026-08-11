@@ -4,7 +4,9 @@ from langgraph.graph import (
     END,
 )
 
-from src.state import DocumentState
+from src.state import (
+    DocumentState,
+)
 
 from src.graph_nodes import (
     load_node,
@@ -24,7 +26,9 @@ from src.graph_nodes import (
 
 
 def build_document_graph():
-    graph = StateGraph(DocumentState)
+    graph = StateGraph(
+        DocumentState
+    )
 
     graph.add_node(
         "load",
@@ -85,8 +89,10 @@ def build_document_graph():
         "load",
         error_router,
         {
-            "continue": "ocr",
-            "error": END,
+            "continue":
+                "ocr",
+            "error":
+                END,
         },
     )
 
@@ -94,8 +100,10 @@ def build_document_graph():
         "ocr",
         error_router,
         {
-            "continue": "document_type",
-            "error": END,
+            "continue":
+                "document_type",
+            "error":
+                END,
         },
     )
 
@@ -103,10 +111,14 @@ def build_document_graph():
         "document_type",
         scan_mode_router,
         {
-            "full": "full_scan",
-            "partial": "partial_scan",
-            "quick": "quick_scan",
-            "error": END,
+            "full":
+                "full_scan",
+            "partial":
+                "partial_scan",
+            "quick":
+                "quick_scan",
+            "error":
+                END,
         },
     )
 
@@ -114,8 +126,10 @@ def build_document_graph():
         "full_scan",
         error_router,
         {
-            "continue": "normalization",
-            "error": END,
+            "continue":
+                "normalization",
+            "error":
+                END,
         },
     )
 
@@ -123,8 +137,10 @@ def build_document_graph():
         "partial_scan",
         error_router,
         {
-            "continue": "normalization",
-            "error": END,
+            "continue":
+                "normalization",
+            "error":
+                END,
         },
     )
 
@@ -137,8 +153,10 @@ def build_document_graph():
         "normalization",
         error_router,
         {
-            "continue": "validation",
-            "error": END,
+            "continue":
+                "validation",
+            "error":
+                END,
         },
     )
 
@@ -146,8 +164,12 @@ def build_document_graph():
         "validation",
         review_router,
         {
-            "review": "human_review",
-            "save": "save",
+            "review":
+                "human_review",
+            "save":
+                "save",
+            "error":
+                END,
         },
     )
 
