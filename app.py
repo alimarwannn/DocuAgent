@@ -27,6 +27,15 @@ from src.library_service import (
 
 from src.zaki_graph import run_zaki
 
+from src.ui.state import (
+    build_scan_options as build_ui_scan_options,
+    clear_document_workspace as clear_ui_document_workspace,
+    initialize_state as initialize_ui_state,
+    prepare_uploaded_document,
+    set_page as set_ui_page,
+    should_enable_processing,
+)
+
 
 # ---------------------------------------------------------
 # PAGE CONFIG
@@ -475,81 +484,20 @@ def safe(value):
 
 
 def initialize_state():
-    defaults = {
-        "page":
-            "Home",
-
-        "scan_output":
-            None,
-
-        "last_image_path":
-            None,
-
-        "last_uploaded_name":
-            None,
-
-        "last_upload_signature":
-            None,
-
-        "last_scan_config":
-            None,
-
-        "current_scan_options":
-            None,
-
-        "uploader_version":
-            0,
-
-        "review_message":
-            None,
-
-        "home_zaki_answer":
-            None,
-
-        "zaki_messages": [
-            {
-                "role":
-                    "assistant",
-
-                "content": (
-                    "Hi, I'm Zaki. "
-                    "Ask me anything about "
-                    "your saved documents."
-                ),
-            }
-        ],
-    }
-
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[
-                key
-            ] = value
+    initialize_ui_state(
+        st.session_state
+    )
 
 
 def go_to(
     page,
     document_id=None,
 ):
-    st.session_state.page = page
-
-    if (
-        page == "Review"
-        and document_id
-        is not None
-    ):
-        st.session_state[
-            "review_document_select"
-        ] = document_id
-
-    if (
-        page == "Documents"
-        and document_id
-        is not None
-    ):
-        st.session_state[
-            "document_select"
-        ] = document_id
+    set_ui_page(
+        st.session_state,
+        page,
+        document_id=document_id,
+    )
 
     st.rerun()
 
@@ -639,33 +587,9 @@ def save_uploaded_file(
 
 
 def clear_document_workspace():
-    st.session_state[
-        "scan_output"
-    ] = None
-
-    st.session_state[
-        "last_image_path"
-    ] = None
-
-    st.session_state[
-        "last_uploaded_name"
-    ] = None
-
-    st.session_state[
-        "last_upload_signature"
-    ] = None
-
-    st.session_state[
-        "last_scan_config"
-    ] = None
-
-    st.session_state[
-        "current_scan_options"
-    ] = None
-
-    st.session_state[
-        "uploader_version"
-    ] += 1
+    clear_ui_document_workspace(
+        st.session_state
+    )
 
 
 def build_scan_state(
@@ -1469,9 +1393,6 @@ def show_scan_result(
                 )
             )
 
-            st.caption(
-                f"Processing reason: {error}"
-            )
 
         return
 
@@ -1517,6 +1438,7 @@ def show_scan_result(
 
         if st.button(
             "Review now",
+            key="review_scanned_document",
             type="primary",
             use_container_width=True,
         ):
@@ -1711,6 +1633,7 @@ def show_scan_result(
     ):
         if st.button(
             "Open saved document",
+            key="open_saved_document",
             use_container_width=True,
         ):
             go_to(
@@ -1805,33 +1728,25 @@ def home_page():
                 )
             )
 
-            if (
-                st.session_state[
-                    "last_upload_signature"
-                ]
-                != signature
-            ):
-                st.session_state[
-                    "scan_output"
-                ] = None
-
-                st.session_state[
-                    "last_image_path"
-                ] = None
-
-                st.session_state[
-                    "last_scan_config"
-                ] = None
-
-                st.session_state[
-                    "last_upload_signature"
-                ] = signature
-
-                st.session_state[
-                    "last_uploaded_name"
-                ] = (
+            prepare_uploaded_document(
+                st.session_state,
+                uploaded_name=(
                     uploaded_file.name
-                )
+                ),
+                signature=signature,
+            )
+
+            st.caption(
+                f"Selected file: {uploaded_file.name}"
+            )
+
+            if st.button(
+                "Remove selected file",
+                key="clear_uploaded_file",
+                use_container_width=True,
+            ):
+                clear_document_workspace()
+                st.rerun()
 
         option_left, option_right = (
             st.columns(
@@ -1934,31 +1849,26 @@ def home_page():
 
         st.session_state[
             "current_scan_options"
-        ] = {
-            "scan_mode":
-                scan_mode,
-
-            "user_request":
-                user_request,
-
-            "document_type_override":
-                document_type_override,
-        }
-
-        ready = (
-            uploaded_file
-            is not None
+        ] = build_ui_scan_options(
+            scan_mode=scan_mode,
+            user_request=user_request,
+            document_type_override=(
+                document_type_override
+            ),
         )
 
-        if (
-            scan_mode
-            == "partial"
-            and not user_request.strip()
-        ):
-            ready = False
+        ready = should_enable_processing(
+            has_uploaded_file=(
+                uploaded_file
+                is not None
+            ),
+            scan_mode=scan_mode,
+            user_request=user_request,
+        )
 
         if st.button(
             "Process document",
+            key="process_document",
             type="primary",
             use_container_width=True,
             disabled=(
@@ -2046,18 +1956,19 @@ def home_page():
             """
         )
 
-        if (
-            counts[
-                "pending_review"
-            ] > 0
+        if st.button(
+            "Open review queue",
+            key="open_review_queue",
+            use_container_width=True,
+            disabled=(
+                counts[
+                    "pending_review"
+                ] == 0
+            ),
         ):
-            if st.button(
-                "Open review queue",
-                use_container_width=True,
-            ):
-                go_to(
-                    "Review"
-                )
+            go_to(
+                "Review"
+            )
 
         ui(
             """
@@ -2094,30 +2005,37 @@ def home_page():
 
         if st.button(
             "Ask Zaki",
-
+            key="home_ask_zaki",
             use_container_width=True,
-
             disabled=(
                 not quick_question.strip()
             ),
         ):
-            with st.spinner(
-                (
-                    "Checking your "
-                    "documents..."
-                )
-            ):
-                result = (
-                    run_zaki(
-                        quick_question.strip()
+            try:
+                with st.spinner(
+                    (
+                        "Checking your "
+                        "documents..."
                     )
-                )
+                ):
+                    result = (
+                        run_zaki(
+                            quick_question.strip()
+                        )
+                    )
 
-            st.session_state[
-                "home_zaki_answer"
-            ] = result.get(
-                "answer"
-            )
+                st.session_state[
+                    "home_zaki_answer"
+                ] = result.get(
+                    "answer"
+                )
+            except Exception:
+                st.session_state[
+                    "home_zaki_answer"
+                ] = (
+                    "Zaki couldn't answer that right now. "
+                    "Please try again."
+                )
 
         if st.session_state[
             "home_zaki_answer"

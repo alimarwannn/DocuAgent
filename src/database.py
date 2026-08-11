@@ -1,8 +1,51 @@
+import os
 import sqlite3
+import sys
 from pathlib import Path
 
 
-DATABASE_PATH = Path("data/docuagent.db")
+def _default_database_path():
+    environment_path = os.getenv(
+        "DOCUAGENT_DB_PATH"
+    )
+
+    if environment_path:
+        return Path(
+            environment_path
+        )
+
+    argv0 = Path(
+        sys.argv[0] or ""
+    )
+
+    looks_like_test_run = (
+        argv0.name.startswith(
+            "test_"
+        )
+        or "pytest"
+        in argv0.name.lower()
+        or bool(
+            os.getenv(
+                "PYTEST_CURRENT_TEST"
+            )
+        )
+    )
+
+    if looks_like_test_run:
+        stem = (
+            argv0.stem
+            or "test_session"
+        )
+
+        return (
+            Path("data/test_dbs")
+            / f"{stem}_{os.getpid()}.db"
+        )
+
+    return Path("data/docuagent.db")
+
+
+DATABASE_PATH = _default_database_path()
 
 REVIEW_STATUSES = {
     "approved",
@@ -685,6 +728,8 @@ def find_document_by_number(
 def filter_documents_by_amount(
     minimum_amount=None,
     maximum_amount=None,
+    currency=None,
+    review_statuses=("approved",),
 ):
     connection = get_database_connection()
     cursor = connection.cursor()
@@ -692,19 +737,34 @@ def filter_documents_by_amount(
     query = """
         SELECT DISTINCT d.*
         FROM documents d
-        JOIN extracted_fields e
-            ON d.id = e.document_id
-        WHERE e.field_name = 'total'
-          AND e.field_value IS NOT NULL
-          AND TRIM(e.field_value) != ''
+        JOIN extracted_fields total_field
+            ON d.id = total_field.document_id
+        WHERE total_field.field_name = 'total'
+          AND total_field.field_value IS NOT NULL
+          AND TRIM(total_field.field_value) != ''
     """
 
     parameters = []
 
+    if review_statuses is not None:
+        placeholders = ", ".join(
+            "?"
+            for _ in review_statuses
+        )
+
+        query += (
+            " AND d.review_status IN "
+            f"({placeholders})"
+        )
+
+        parameters.extend(
+            review_statuses
+        )
+
     if minimum_amount is not None:
         query += (
             " AND "
-            "CAST(e.field_value AS REAL) >= ?"
+            "CAST(total_field.field_value AS REAL) >= ?"
         )
 
         parameters.append(
@@ -714,11 +774,27 @@ def filter_documents_by_amount(
     if maximum_amount is not None:
         query += (
             " AND "
-            "CAST(e.field_value AS REAL) <= ?"
+            "CAST(total_field.field_value AS REAL) <= ?"
         )
 
         parameters.append(
             float(maximum_amount)
+        )
+
+    if currency:
+        query += """
+            AND EXISTS (
+                SELECT 1
+                FROM extracted_fields currency_field
+                WHERE currency_field.document_id = d.id
+                  AND currency_field.field_name = 'currency'
+                  AND UPPER(TRIM(currency_field.field_value))
+                      = UPPER(TRIM(?))
+            )
+        """
+
+        parameters.append(
+            str(currency)
         )
 
     query += (

@@ -27,20 +27,27 @@ ALLOWED_TOOLS = {
 }
 
 
+CURRENCY_CODES = (
+    "EGP",
+    "USD",
+    "SAR",
+    "MYR",
+    "AED",
+    "EUR",
+    "GBP",
+)
+
+
 def _selection(
     tool_name,
     arguments=None,
     reason="",
 ):
     return {
-        "tool_name":
-            tool_name,
-        "arguments":
-            arguments or {},
-        "reason":
-            reason,
-        "error":
-            None,
+        "tool_name": tool_name,
+        "arguments": arguments or {},
+        "reason": reason,
+        "error": None,
     }
 
 
@@ -55,83 +62,49 @@ def _relative_date_range(
 
     if "today" in question:
         value = _iso(today)
-
-        return (
-            value,
-            value,
-        )
+        return (value, value)
 
     if "yesterday" in question:
         value = _iso(
-            today
-            - timedelta(days=1)
+            today - timedelta(days=1)
         )
-
-        return (
-            value,
-            value,
-        )
+        return (value, value)
 
     if "this week" in question:
-        start = (
-            today
-            - timedelta(
-                days=today.weekday()
-            )
+        start = today - timedelta(
+            days=today.weekday()
         )
-
         return (
             _iso(start),
             _iso(today),
         )
 
     if "last week" in question:
-        this_week_start = (
-            today
-            - timedelta(
-                days=today.weekday()
-            )
+        this_week_start = today - timedelta(
+            days=today.weekday()
         )
-
-        end = (
-            this_week_start
-            - timedelta(days=1)
+        end = this_week_start - timedelta(
+            days=1
         )
-
-        start = (
-            end
-            - timedelta(days=6)
-        )
-
+        start = end - timedelta(days=6)
         return (
             _iso(start),
             _iso(end),
         )
 
     if "this month" in question:
-        start = today.replace(
-            day=1
-        )
-
+        start = today.replace(day=1)
         return (
             _iso(start),
             _iso(today),
         )
 
     if "last month" in question:
-        this_month_start = (
-            today.replace(day=1)
+        this_month_start = today.replace(day=1)
+        end = this_month_start - timedelta(
+            days=1
         )
-
-        end = (
-            this_month_start
-            - timedelta(days=1)
-        )
-
-        start = end.replace(
-            day=1
-        )
-
+        start = end.replace(day=1)
         return (
             _iso(start),
             _iso(end),
@@ -149,16 +122,10 @@ def _exact_date_range(
     )
 
     if len(dates) >= 2:
-        return (
-            dates[0],
-            dates[1],
-        )
+        return (dates[0], dates[1])
 
     if len(dates) == 1:
-        return (
-            dates[0],
-            dates[0],
-        )
+        return (dates[0], dates[0])
 
     return None
 
@@ -167,12 +134,8 @@ def _date_range(
     question,
 ):
     return (
-        _exact_date_range(
-            question
-        )
-        or _relative_date_range(
-            question
-        )
+        _exact_date_range(question)
+        or _relative_date_range(question)
     )
 
 
@@ -200,8 +163,7 @@ def _extract_document_number(
             [A-Za-z]*\d[A-Za-z0-9_\-/]*
         )
         """,
-        re.IGNORECASE
-        | re.VERBOSE,
+        re.IGNORECASE | re.VERBOSE,
     )
 
     match = pattern.search(
@@ -236,6 +198,25 @@ def _extract_limit(question):
     return 5
 
 
+def _extract_currency(
+    question,
+):
+    pattern = (
+        r"\b(" + "|".join(CURRENCY_CODES) + r")\b"
+    )
+
+    match = re.search(
+        pattern,
+        question,
+        re.IGNORECASE,
+    )
+
+    if not match:
+        return None
+
+    return match.group(1).upper()
+
+
 def _extract_amount_range(
     question,
 ):
@@ -252,14 +233,12 @@ def _extract_amount_range(
 
     if between:
         return {
-            "minimum_amount":
-                float(
-                    between.group(1)
-                ),
-            "maximum_amount":
-                float(
-                    between.group(2)
-                ),
+            "minimum_amount": float(
+                between.group(1)
+            ),
+            "maximum_amount": float(
+                between.group(2)
+            ),
         }
 
     above = re.search(
@@ -280,10 +259,9 @@ def _extract_amount_range(
 
     if above:
         return {
-            "minimum_amount":
-                float(
-                    above.group(1)
-                ),
+            "minimum_amount": float(
+                above.group(1)
+            ),
         }
 
     below = re.search(
@@ -303,10 +281,9 @@ def _extract_amount_range(
 
     if below:
         return {
-            "maximum_amount":
-                float(
-                    below.group(1)
-                ),
+            "maximum_amount": float(
+                below.group(1)
+            ),
         }
 
     return None
@@ -318,18 +295,15 @@ def deterministic_tool_selection(
     original = question.strip()
     lowered = original.lower()
 
-    document_number = (
-        _extract_document_number(
-            original
-        )
+    document_number = _extract_document_number(
+        original
     )
 
     if document_number:
         return _selection(
             "find_document_by_number",
             {
-                "document_number":
-                    document_number,
+                "document_number": document_number,
             },
             "Specific document number detected.",
         )
@@ -404,10 +378,8 @@ def deterministic_tool_selection(
 
         if date_range:
             arguments = {
-                "start_date":
-                    date_range[0],
-                "end_date":
-                    date_range[1],
+                "start_date": date_range[0],
+                "end_date": date_range[1],
             }
 
         return _selection(
@@ -430,10 +402,8 @@ def deterministic_tool_selection(
 
         if date_range:
             arguments = {
-                "start_date":
-                    date_range[0],
-                "end_date":
-                    date_range[1],
+                "start_date": date_range[0],
+                "end_date": date_range[1],
             }
 
         return _selection(
@@ -458,10 +428,8 @@ def deterministic_tool_selection(
 
         if date_range:
             arguments = {
-                "start_date":
-                    date_range[0],
-                "end_date":
-                    date_range[1],
+                "start_date": date_range[0],
+                "end_date": date_range[1],
             }
 
         return _selection(
@@ -485,10 +453,9 @@ def deterministic_tool_selection(
         return _selection(
             "highest_value_documents",
             {
-                "limit":
-                    _extract_limit(
-                        lowered
-                    ),
+                "limit": _extract_limit(
+                    lowered
+                ),
             },
             "Highest value question detected.",
         )
@@ -523,8 +490,7 @@ def deterministic_tool_selection(
 
         if party_match:
             party = (
-                party_match
-                .group(1)
+                party_match.group(1)
                 .strip()
                 .rstrip(".")
             )
@@ -533,19 +499,23 @@ def deterministic_tool_selection(
                 return _selection(
                     "filter_documents_by_party",
                     {
-                        "name":
-                            party,
+                        "name": party,
                     },
                     "Supplier or merchant filter detected.",
                 )
 
-    amount_range = (
-        _extract_amount_range(
-            lowered
-        )
+    amount_range = _extract_amount_range(
+        lowered
     )
 
     if amount_range:
+        currency = _extract_currency(
+            original
+        )
+
+        if currency:
+            amount_range["currency"] = currency
+
         return _selection(
             "filter_documents_by_amount",
             amount_range,
@@ -568,10 +538,8 @@ def deterministic_tool_selection(
         return _selection(
             "filter_documents_by_date",
             {
-                "start_date":
-                    date_range[0],
-                "end_date":
-                    date_range[1],
+                "start_date": date_range[0],
+                "end_date": date_range[1],
             },
             "Date range filter detected.",
         )
@@ -588,8 +556,7 @@ def deterministic_tool_selection(
         return _selection(
             "filter_documents_by_type",
             {
-                "document_type":
-                    "invoice",
+                "document_type": "invoice",
             },
             "Invoice list requested.",
         )
@@ -606,8 +573,7 @@ def deterministic_tool_selection(
         return _selection(
             "filter_documents_by_type",
             {
-                "document_type":
-                    "receipt",
+                "document_type": "receipt",
             },
             "Receipt list requested.",
         )
@@ -653,10 +619,7 @@ def parse_json_response(response):
     cleaned = cleaned.strip()
 
     try:
-        return json.loads(
-            cleaned
-        )
-
+        return json.loads(cleaned)
     except json.JSONDecodeError:
         pass
 
@@ -671,11 +634,8 @@ def parse_json_response(response):
 
     try:
         return json.loads(
-            cleaned[
-                start:end + 1
-            ]
+            cleaned[start:end + 1]
         )
-
     except json.JSONDecodeError:
         return None
 
@@ -730,7 +690,8 @@ filter_documents_by_amount
 Arguments:
 {{
     "minimum_amount": number or null,
-    "maximum_amount": number or null
+    "maximum_amount": number or null,
+    "currency": "currency code or null"
 }}
 
 total_spend
@@ -793,10 +754,8 @@ def select_zaki_tool(question):
         return {
             "tool_name": None,
             "arguments": {},
-            "reason":
-                "Question must be text.",
-            "error":
-                "invalid_question",
+            "reason": "Question must be text.",
+            "error": "invalid_question",
         }
 
     question = question.strip()
@@ -805,34 +764,23 @@ def select_zaki_tool(question):
         return {
             "tool_name": None,
             "arguments": {},
-            "reason":
-                "Question is empty.",
-            "error":
-                "empty_question",
+            "reason": "Question is empty.",
+            "error": "empty_question",
         }
 
-    fast_selection = (
-        deterministic_tool_selection(
-            question
-        )
+    fast_selection = deterministic_tool_selection(
+        question
     )
 
     if fast_selection is not None:
         return fast_selection
 
-    prompt = (
-        build_tool_selection_prompt(
-            question
-        )
+    prompt = build_tool_selection_prompt(
+        question
     )
 
-    response = ask_groq(
-        prompt
-    )
-
-    parsed = parse_json_response(
-        response
-    )
+    response = ask_groq(prompt)
+    parsed = parse_json_response(response)
 
     if not isinstance(
         parsed,
@@ -845,19 +793,16 @@ def select_zaki_tool(question):
                 "Zaki could not understand "
                 "the tool selection response."
             ),
-            "error":
-                "invalid_llm_response",
+            "error": "invalid_llm_response",
         }
 
     tool_name = parsed.get(
         "tool_name"
     )
-
     arguments = parsed.get(
         "arguments",
         {},
     )
-
     reason = parsed.get(
         "reason",
         "",
@@ -871,8 +816,7 @@ def select_zaki_tool(question):
                 reason
                 or "No suitable tool was found."
             ),
-            "error":
-                "unsupported_question",
+            "error": "unsupported_question",
         }
 
     if tool_name not in ALLOWED_TOOLS:
@@ -883,8 +827,7 @@ def select_zaki_tool(question):
                 f"Tool '{tool_name}' "
                 "is not allowed."
             ),
-            "error":
-                "invalid_tool",
+            "error": "invalid_tool",
         }
 
     if not isinstance(
@@ -894,12 +837,8 @@ def select_zaki_tool(question):
         arguments = {}
 
     return {
-        "tool_name":
-            tool_name,
-        "arguments":
-            arguments,
-        "reason":
-            reason,
-        "error":
-            None,
+        "tool_name": tool_name,
+        "arguments": arguments,
+        "reason": reason,
+        "error": None,
     }

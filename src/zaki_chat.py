@@ -27,6 +27,23 @@ def _number(value):
     return f"{number:,.2f}"
 
 
+def _currency_amount(
+    currency,
+    value,
+):
+    if currency in (None, ""):
+        return _number(value)
+
+    return f"{currency} {_number(value)}"
+
+
+def _grouped_currency_totals(values):
+    return "; ".join(
+        _currency_amount(currency, total)
+        for currency, total in values.items()
+    )
+
+
 def _references(documents):
     if not documents:
         return ""
@@ -128,55 +145,86 @@ def format_deterministic_answer(
         )
 
     if tool_name == "total_spend":
-        total = _number(
-            result.get(
-                "total",
-                0,
-            )
-        )
-
         count = result.get(
             "document_count",
             0,
         )
 
+        totals_by_currency = result.get(
+            "totals_by_currency",
+            {},
+        )
+
+        if count == 0:
+            return (
+                "I couldn't find any approved "
+                "documents for that spending question."
+            )
+
+        if len(totals_by_currency) > 1:
+            return (
+                f"Across {count} approved "
+                f"document{'s' if count != 1 else ''}, "
+                f"spend is grouped by currency: "
+                f"{_grouped_currency_totals(totals_by_currency)}."
+            )
+
+        currency = result.get(
+            "currency"
+        )
+        total = result.get(
+            "total",
+            0,
+        )
+
         return (
-            f"The total across "
-            f"{count} matching "
+            f"The total across {count} approved "
             f"document{'s' if count != 1 else ''} "
-            f"is {total}."
+            f"is {_currency_amount(currency, total)}."
         )
 
     if tool_name == "total_tax":
-        total = _number(
-            result.get(
-                "total_tax",
-                0,
-            )
-        )
-
         count = result.get(
             "document_count",
             0,
         )
 
+        totals_by_currency = result.get(
+            "totals_by_currency",
+            {},
+        )
+
+        if count == 0:
+            return (
+                "I couldn't find any approved "
+                "documents for that tax question."
+            )
+
+        if len(totals_by_currency) > 1:
+            return (
+                f"Across {count} approved "
+                f"document{'s' if count != 1 else ''}, "
+                f"tax is grouped by currency: "
+                f"{_grouped_currency_totals(totals_by_currency)}."
+            )
+
+        currency = result.get(
+            "currency"
+        )
+        total_tax = result.get(
+            "total_tax",
+            0,
+        )
+
         return (
-            f"The total tax across "
-            f"{count} matching "
+            f"The total tax across {count} approved "
             f"document{'s' if count != 1 else ''} "
-            f"is {total}."
+            f"is {_currency_amount(currency, total_tax)}."
         )
 
     if tool_name == (
         "average_document_value"
     ):
-        average = _number(
-            result.get(
-                "average",
-                0,
-            )
-        )
-
         count = result.get(
             "document_count",
             0,
@@ -188,10 +236,30 @@ def format_deterministic_answer(
                 "documents to average."
             )
 
+        averages_by_currency = result.get(
+            "averages_by_currency",
+            {},
+        )
+
+        if len(averages_by_currency) > 1:
+            return (
+                f"Across {count} approved documents, "
+                f"the average value is grouped by currency: "
+                f"{_grouped_currency_totals(averages_by_currency)}."
+            )
+
+        currency = result.get(
+            "currency"
+        )
+        average = result.get(
+            "average",
+            0,
+        )
+
         return (
-            f"The average value across "
-            f"{count} matching documents "
-            f"is {average}."
+            f"The average value across {count} approved "
+            f"document{'s' if count != 1 else ''} "
+            f"is {_currency_amount(currency, average)}."
         )
 
     if tool_name == (
@@ -210,19 +278,21 @@ def format_deterministic_answer(
                 document.get("id")
             )
 
-            total = _number(
-                document.get(
-                    "total",
-                    0,
-                )
+            total = document.get(
+                "total",
+                0,
+            )
+
+            currency = document.get(
+                "currency"
             )
 
             lines.append(
-                f"#{document_id}: {total}"
+                f"#{document_id}: {_currency_amount(currency, total)}"
             )
 
         return (
-            "The highest-value documents are "
+            "The highest-value approved documents are "
             + "; ".join(lines)
             + "."
         )
@@ -248,7 +318,7 @@ def format_deterministic_answer(
 
         return (
             f"{supplier} appears most often "
-            f"with {count} "
+            f"in approved documents with {count} "
             f"document{'s' if count != 1 else ''}."
         )
 
@@ -469,16 +539,11 @@ def ask_zaki(question):
     )
 
     return {
-        "question":
-            question,
-        "tool_selection":
-            selection,
-        "tool_execution":
-            execution,
-        "answer":
-            answer,
-        "error":
-            execution.get(
-                "error"
-            ),
+        "question": question,
+        "tool_selection": selection,
+        "tool_execution": execution,
+        "answer": answer,
+        "error": execution.get(
+            "error"
+        ),
     }

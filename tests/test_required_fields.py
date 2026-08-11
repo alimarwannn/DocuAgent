@@ -35,7 +35,9 @@ assert valid_issues == []
 assert len(invalid_issues) == 3
 assert invalid_issues[0]["issue_type"] == "missing_field"
 assert invalid_issues[0]["severity"] == "error"
-assert unknown_issues == []
+assert len(unknown_issues) == 1
+assert unknown_issues[0]["issue_type"] == "unknown_document_type"
+assert unknown_issues[0]["severity"] == "error"
 
 print("Required-field validation tests passed.")
 print(invalid_issues)

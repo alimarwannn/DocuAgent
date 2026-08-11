@@ -545,11 +545,13 @@ def _recover_tax(
     ]
 
     markers = [
-        "total gst",
-        "gst amount",
-        "total tax",
+        "tax:",
         "tax amount",
+        "total tax",
+        "vat",
         "vat amount",
+        "gst amount",
+        "total gst",
         "sales tax",
     ]
 
@@ -561,6 +563,16 @@ def _recover_tax(
         if not any(
             marker in lowered
             for marker in markers
+        ):
+            continue
+
+        if any(
+            excluded in lowered
+            for excluded in [
+                "exclude gst",
+                "inclusive gst",
+                "subtotal",
+            ]
         ):
             continue
 
@@ -637,8 +649,7 @@ def _recover_total(
             continue
 
         valid_total_label = (
-            lowered
-            in {
+            lowered in {
                 "total",
                 "total:",
                 "grand total",
@@ -650,6 +661,18 @@ def _recover_total(
             }
             or lowered.startswith(
                 "total inclusive"
+            )
+            or lowered.startswith(
+                "total:"
+            )
+            or lowered.startswith(
+                "grand total:"
+            )
+            or lowered.startswith(
+                "amount due:"
+            )
+            or lowered.startswith(
+                "net total:"
             )
         )
 

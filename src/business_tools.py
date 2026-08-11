@@ -35,6 +35,17 @@ def _normalize_amount(value):
     return round(amount, 2)
 
 
+def _currency_code(value):
+    if value in (None, ""):
+        return None
+
+    text = " ".join(
+        str(value).strip().upper().split()
+    )
+
+    return text or None
+
+
 def _normalize_date(value):
     if value in (None, ""):
         return None
@@ -60,8 +71,24 @@ def _normalize_date(value):
     return text
 
 
-def get_documents_with_fields():
+def get_documents_with_fields(
+    review_statuses=("approved",),
+):
     documents = list_documents()
+
+    if review_statuses is not None:
+        allowed_statuses = set(
+            review_statuses
+        )
+
+        documents = [
+            document
+            for document in documents
+            if document.get(
+                "review_status"
+            )
+            in allowed_statuses
+        ]
 
     results = []
 
@@ -73,70 +100,106 @@ def get_documents_with_fields():
     return results
 
 
-def total_spend(start_date=None, end_date=None):
-    documents = get_documents_with_fields()
+def _documents_by_currency(
+    amount_field,
+    start_date=None,
+    end_date=None,
+    review_statuses=("approved",),
+):
+    documents = get_documents_with_fields(
+        review_statuses=review_statuses
+    )
 
-    total = 0.0
+    grouped_totals = defaultdict(float)
     matched_documents = []
 
     for document in documents:
         fields = document["fields"]
 
-        document_date = _normalize_date(fields.get("date"))
-        amount = _to_float(fields.get("total"))
+        document_date = _normalize_date(
+            fields.get("date")
+        )
+
+        amount = _to_float(
+            fields.get(amount_field)
+        )
 
         if amount is None:
             continue
 
         if start_date is not None:
-            if document_date is None or document_date < start_date:
+            if (
+                document_date is None
+                or document_date < start_date
+            ):
                 continue
 
         if end_date is not None:
-            if document_date is None or document_date > end_date:
+            if (
+                document_date is None
+                or document_date > end_date
+            ):
                 continue
 
-        total += amount
+        currency = (
+            _currency_code(
+                fields.get("currency")
+            )
+            or "UNKNOWN"
+        )
+
+        grouped_totals[currency] += amount
         matched_documents.append(document)
 
+    totals_by_currency = {
+        currency: round(total, 2)
+        for currency, total in sorted(
+            grouped_totals.items()
+        )
+    }
+
+    single_currency = None
+    single_total = None
+
+    if len(totals_by_currency) == 1:
+        (
+            single_currency,
+            single_total,
+        ) = next(
+            iter(
+                totals_by_currency.items()
+            )
+        )
+
     return {
-        "total": total,
+        "currency": single_currency,
+        "total": single_total,
+        "totals_by_currency": totals_by_currency,
         "document_count": len(matched_documents),
         "documents": matched_documents,
     }
+
+
+def total_spend(start_date=None, end_date=None):
+    return _documents_by_currency(
+        "total",
+        start_date=start_date,
+        end_date=end_date,
+    )
 
 
 def total_tax(start_date=None, end_date=None):
-    documents = get_documents_with_fields()
+    summary = _documents_by_currency(
+        "tax",
+        start_date=start_date,
+        end_date=end_date,
+    )
 
-    total = 0.0
-    matched_documents = []
+    summary["total_tax"] = summary[
+        "total"
+    ]
 
-    for document in documents:
-        fields = document["fields"]
-
-        document_date = _normalize_date(fields.get("date"))
-        tax = _to_float(fields.get("tax"))
-
-        if tax is None:
-            continue
-
-        if start_date is not None:
-            if document_date is None or document_date < start_date:
-                continue
-
-        if end_date is not None:
-            if document_date is None or document_date > end_date:
-                continue
-
-        total += tax
-        matched_documents.append(document)
-
-    return {
-        "total_tax": total,
-        "document_count": len(matched_documents),
-        "documents": matched_documents,
-    }
+    return summary
 
 
 def average_document_value(start_date=None, end_date=None):
@@ -147,12 +210,63 @@ def average_document_value(start_date=None, end_date=None):
     if count == 0:
         average = 0.0
     else:
-        average = spend_result["total"] / count
+        total = spend_result.get(
+            "total"
+        )
+
+        average = (
+            0.0
+            if total is None
+            else total / count
+        )
+
+    averages_by_currency = {}
+
+    if count > 0:
+        grouped_counts = defaultdict(int)
+
+        for document in spend_result[
+            "documents"
+        ]:
+            currency = (
+                _currency_code(
+                    document[
+                        "fields"
+                    ].get("currency")
+                )
+                or "UNKNOWN"
+            )
+
+            grouped_counts[currency] += 1
+
+        for (
+            currency,
+            total,
+        ) in spend_result[
+            "totals_by_currency"
+        ].items():
+            averages_by_currency[
+                currency
+            ] = round(
+                total
+                / grouped_counts[currency],
+                2,
+            )
 
     return {
         "average": average,
+        "currency": spend_result.get(
+            "currency"
+        ),
+        "averages_by_currency": averages_by_currency,
         "document_count": count,
-        "total": spend_result["total"],
+        "total": spend_result.get(
+            "total"
+        ),
+        "totals_by_currency": spend_result.get(
+            "totals_by_currency",
+            {},
+        ),
     }
 
 
@@ -169,6 +283,11 @@ def highest_value_documents(limit=5):
 
         document_data = dict(document)
         document_data["total"] = amount
+        document_data["currency"] = _currency_code(
+            document["fields"].get(
+                "currency"
+            )
+        )
 
         valued_documents.append(document_data)
 
@@ -186,7 +305,8 @@ def supplier_summary():
     summaries = defaultdict(
         lambda: {
             "document_count": 0,
-            "total_value": 0.0,
+            "total_value": None,
+            "total_value_by_currency": defaultdict(float),
         }
     )
 
@@ -208,21 +328,50 @@ def supplier_summary():
         if normalized_supplier not in supplier_names:
             supplier_names[normalized_supplier] = supplier
 
-        amount = _to_float(fields.get("total"))
+        amount = _to_float(
+            fields.get("total")
+        )
+        currency = _currency_code(
+            fields.get("currency")
+        )
 
         summaries[normalized_supplier]["document_count"] += 1
 
-        if amount is not None:
-            summaries[normalized_supplier]["total_value"] += amount
+        if (
+            amount is not None
+            and currency is not None
+        ):
+            summaries[normalized_supplier][
+                "total_value_by_currency"
+            ][currency] += amount
 
     results = []
 
     for normalized_supplier, data in summaries.items():
+        grouped_totals = {
+            currency: round(total, 2)
+            for currency, total in sorted(
+                data[
+                    "total_value_by_currency"
+                ].items()
+            )
+        }
+
+        total_value = None
+
+        if len(grouped_totals) == 1:
+            total_value = next(
+                iter(
+                    grouped_totals.values()
+                )
+            )
+
         results.append(
             {
                 "supplier": supplier_names[normalized_supplier],
                 "document_count": data["document_count"],
-                "total_value": data["total_value"],
+                "total_value": total_value,
+                "total_value_by_currency": grouped_totals,
             }
         )
 
@@ -311,7 +460,9 @@ def duplicate_invoices():
 
 
 def detect_contradictions():
-    documents = get_documents_with_fields()
+    documents = get_documents_with_fields(
+        review_statuses=None
+    )
 
     invoice_groups = defaultdict(list)
 

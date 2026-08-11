@@ -1,5 +1,10 @@
-from src.database import list_documents
+from src.database import (
+    create_tables,
+    list_documents,
+)
 
+
+create_tables()
 
 documents = list_documents()
 
