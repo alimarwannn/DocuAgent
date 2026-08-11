@@ -1,6 +1,11 @@
 import json
 import re
 
+from datetime import (
+    date,
+    timedelta,
+)
+
 from src.groq_client import ask_groq
 
 
@@ -20,6 +25,610 @@ ALLOWED_TOOLS = {
     "duplicate_invoices",
     "detect_contradictions",
 }
+
+
+def _selection(
+    tool_name,
+    arguments=None,
+    reason="",
+):
+    return {
+        "tool_name":
+            tool_name,
+        "arguments":
+            arguments or {},
+        "reason":
+            reason,
+        "error":
+            None,
+    }
+
+
+def _iso(value):
+    return value.isoformat()
+
+
+def _relative_date_range(
+    question,
+):
+    today = date.today()
+
+    if "today" in question:
+        value = _iso(today)
+
+        return (
+            value,
+            value,
+        )
+
+    if "yesterday" in question:
+        value = _iso(
+            today
+            - timedelta(days=1)
+        )
+
+        return (
+            value,
+            value,
+        )
+
+    if "this week" in question:
+        start = (
+            today
+            - timedelta(
+                days=today.weekday()
+            )
+        )
+
+        return (
+            _iso(start),
+            _iso(today),
+        )
+
+    if "last week" in question:
+        this_week_start = (
+            today
+            - timedelta(
+                days=today.weekday()
+            )
+        )
+
+        end = (
+            this_week_start
+            - timedelta(days=1)
+        )
+
+        start = (
+            end
+            - timedelta(days=6)
+        )
+
+        return (
+            _iso(start),
+            _iso(end),
+        )
+
+    if "this month" in question:
+        start = today.replace(
+            day=1
+        )
+
+        return (
+            _iso(start),
+            _iso(today),
+        )
+
+    if "last month" in question:
+        this_month_start = (
+            today.replace(day=1)
+        )
+
+        end = (
+            this_month_start
+            - timedelta(days=1)
+        )
+
+        start = end.replace(
+            day=1
+        )
+
+        return (
+            _iso(start),
+            _iso(end),
+        )
+
+    return None
+
+
+def _exact_date_range(
+    question,
+):
+    dates = re.findall(
+        r"\b\d{4}-\d{2}-\d{2}\b",
+        question,
+    )
+
+    if len(dates) >= 2:
+        return (
+            dates[0],
+            dates[1],
+        )
+
+    if len(dates) == 1:
+        return (
+            dates[0],
+            dates[0],
+        )
+
+    return None
+
+
+def _date_range(
+    question,
+):
+    return (
+        _exact_date_range(
+            question
+        )
+        or _relative_date_range(
+            question
+        )
+    )
+
+
+def _extract_document_number(
+    original_question,
+):
+    pattern = re.compile(
+        r"""
+        \b
+        (?:invoice|receipt)
+        \s*
+        (?:
+            number|
+            no\.?
+        )?
+        \s*
+        [:#-]?
+        \s*
+        (
+            [A-Za-z0-9]
+            [A-Za-z0-9_\-/]*
+            -
+            [A-Za-z0-9_\-/]+
+            |
+            [A-Za-z]*\d[A-Za-z0-9_\-/]*
+        )
+        """,
+        re.IGNORECASE
+        | re.VERBOSE,
+    )
+
+    match = pattern.search(
+        original_question
+    )
+
+    if match:
+        return match.group(1)
+
+    return None
+
+
+def _extract_limit(question):
+    patterns = [
+        r"\btop\s+(\d+)\b",
+        r"\b(\d+)\s+highest\b",
+        r"\b(\d+)\s+largest\b",
+        r"\b(\d+)\s+most expensive\b",
+    ]
+
+    for pattern in patterns:
+        match = re.search(
+            pattern,
+            question,
+        )
+
+        if match:
+            return int(
+                match.group(1)
+            )
+
+    return 5
+
+
+def _extract_amount_range(
+    question,
+):
+    between = re.search(
+        r"""
+        \bbetween\s+
+        ([0-9]+(?:\.[0-9]+)?)
+        \s+(?:and|to)\s+
+        ([0-9]+(?:\.[0-9]+)?)
+        """,
+        question,
+        re.VERBOSE,
+    )
+
+    if between:
+        return {
+            "minimum_amount":
+                float(
+                    between.group(1)
+                ),
+            "maximum_amount":
+                float(
+                    between.group(2)
+                ),
+        }
+
+    above = re.search(
+        r"""
+        \b
+        (?:
+            above|
+            over|
+            greater\s+than|
+            more\s+than
+        )
+        \s+
+        ([0-9]+(?:\.[0-9]+)?)
+        """,
+        question,
+        re.VERBOSE,
+    )
+
+    if above:
+        return {
+            "minimum_amount":
+                float(
+                    above.group(1)
+                ),
+        }
+
+    below = re.search(
+        r"""
+        \b
+        (?:
+            below|
+            under|
+            less\s+than
+        )
+        \s+
+        ([0-9]+(?:\.[0-9]+)?)
+        """,
+        question,
+        re.VERBOSE,
+    )
+
+    if below:
+        return {
+            "maximum_amount":
+                float(
+                    below.group(1)
+                ),
+        }
+
+    return None
+
+
+def deterministic_tool_selection(
+    question,
+):
+    original = question.strip()
+    lowered = original.lower()
+
+    document_number = (
+        _extract_document_number(
+            original
+        )
+    )
+
+    if document_number:
+        return _selection(
+            "find_document_by_number",
+            {
+                "document_number":
+                    document_number,
+            },
+            "Specific document number detected.",
+        )
+
+    if (
+        "duplicate" in lowered
+        or (
+            "repeated" in lowered
+            and "invoice" in lowered
+        )
+    ):
+        return _selection(
+            "duplicate_invoices",
+            reason=(
+                "Duplicate invoice question detected."
+            ),
+        )
+
+    if any(
+        phrase in lowered
+        for phrase in [
+            "contradiction",
+            "contradictions",
+            "conflicting",
+            "conflict",
+            "inconsistent",
+            "inconsistency",
+        ]
+    ):
+        return _selection(
+            "detect_contradictions",
+            reason=(
+                "Contradiction question detected."
+            ),
+        )
+
+    if any(
+        phrase in lowered
+        for phrase in [
+            "validation problem",
+            "validation problems",
+            "validation issue",
+            "validation issues",
+            "invalid document",
+            "invalid documents",
+            "documents with problems",
+        ]
+    ):
+        return _selection(
+            "invalid_documents",
+            reason=(
+                "Validation issue question detected."
+            ),
+        )
+
+    date_range = _date_range(
+        lowered
+    )
+
+    if (
+        "tax" in lowered
+        and any(
+            phrase in lowered
+            for phrase in [
+                "total",
+                "how much",
+                "sum",
+            ]
+        )
+    ):
+        arguments = {}
+
+        if date_range:
+            arguments = {
+                "start_date":
+                    date_range[0],
+                "end_date":
+                    date_range[1],
+            }
+
+        return _selection(
+            "total_tax",
+            arguments,
+            "Total tax question detected.",
+        )
+
+    if any(
+        phrase in lowered
+        for phrase in [
+            "how much did i spend",
+            "how much have i spent",
+            "total spend",
+            "total spending",
+            "how much was spent",
+        ]
+    ):
+        arguments = {}
+
+        if date_range:
+            arguments = {
+                "start_date":
+                    date_range[0],
+                "end_date":
+                    date_range[1],
+            }
+
+        return _selection(
+            "total_spend",
+            arguments,
+            "Spending question detected.",
+        )
+
+    if (
+        "average" in lowered
+        and any(
+            word in lowered
+            for word in [
+                "invoice",
+                "document",
+                "value",
+                "amount",
+            ]
+        )
+    ):
+        arguments = {}
+
+        if date_range:
+            arguments = {
+                "start_date":
+                    date_range[0],
+                "end_date":
+                    date_range[1],
+            }
+
+        return _selection(
+            "average_document_value",
+            arguments,
+            "Average value question detected.",
+        )
+
+    if any(
+        phrase in lowered
+        for phrase in [
+            "highest value",
+            "highest-value",
+            "largest invoice",
+            "largest document",
+            "most expensive",
+            "top invoices",
+            "top documents",
+        ]
+    ):
+        return _selection(
+            "highest_value_documents",
+            {
+                "limit":
+                    _extract_limit(
+                        lowered
+                    ),
+            },
+            "Highest value question detected.",
+        )
+
+    if (
+        "supplier" in lowered
+        or "merchant" in lowered
+    ):
+        if any(
+            phrase in lowered
+            for phrase in [
+                "most often",
+                "most common",
+                "summary",
+                "appear most",
+                "spending by",
+                "supplier spending",
+            ]
+        ):
+            return _selection(
+                "supplier_summary",
+                reason=(
+                    "Supplier summary question detected."
+                ),
+            )
+
+        party_match = re.search(
+            r"\b(?:from|by)\s+(.+?)(?:\?|$)",
+            original,
+            re.IGNORECASE,
+        )
+
+        if party_match:
+            party = (
+                party_match
+                .group(1)
+                .strip()
+                .rstrip(".")
+            )
+
+            if party:
+                return _selection(
+                    "filter_documents_by_party",
+                    {
+                        "name":
+                            party,
+                    },
+                    "Supplier or merchant filter detected.",
+                )
+
+    amount_range = (
+        _extract_amount_range(
+            lowered
+        )
+    )
+
+    if amount_range:
+        return _selection(
+            "filter_documents_by_amount",
+            amount_range,
+            "Amount filter detected.",
+        )
+
+    if date_range and any(
+        word in lowered
+        for word in [
+            "document",
+            "documents",
+            "invoice",
+            "invoices",
+            "receipt",
+            "receipts",
+            "show",
+            "list",
+        ]
+    ):
+        return _selection(
+            "filter_documents_by_date",
+            {
+                "start_date":
+                    date_range[0],
+                "end_date":
+                    date_range[1],
+            },
+            "Date range filter detected.",
+        )
+
+    if any(
+        phrase in lowered
+        for phrase in [
+            "all invoices",
+            "show invoices",
+            "list invoices",
+            "my invoices",
+        ]
+    ):
+        return _selection(
+            "filter_documents_by_type",
+            {
+                "document_type":
+                    "invoice",
+            },
+            "Invoice list requested.",
+        )
+
+    if any(
+        phrase in lowered
+        for phrase in [
+            "all receipts",
+            "show receipts",
+            "list receipts",
+            "my receipts",
+        ]
+    ):
+        return _selection(
+            "filter_documents_by_type",
+            {
+                "document_type":
+                    "receipt",
+            },
+            "Receipt list requested.",
+        )
+
+    if any(
+        phrase in lowered
+        for phrase in [
+            "all documents",
+            "show documents",
+            "list documents",
+            "my documents",
+        ]
+    ):
+        return _selection(
+            "list_documents",
+            reason=(
+                "Document list requested."
+            ),
+        )
+
+    return None
 
 
 def parse_json_response(response):
@@ -44,53 +653,61 @@ def parse_json_response(response):
     cleaned = cleaned.strip()
 
     try:
-        return json.loads(cleaned)
+        return json.loads(
+            cleaned
+        )
+
     except json.JSONDecodeError:
         pass
 
     start = cleaned.find("{")
     end = cleaned.rfind("}")
 
-    if start == -1 or end == -1:
+    if (
+        start == -1
+        or end == -1
+    ):
         return None
 
     try:
-        return json.loads(cleaned[start:end + 1])
+        return json.loads(
+            cleaned[
+                start:end + 1
+            ]
+        )
+
     except json.JSONDecodeError:
         return None
 
 
-def build_tool_selection_prompt(question):
+def build_tool_selection_prompt(
+    question,
+):
+    today = date.today().isoformat()
+
     return f"""
 You are Zaki, the chatbot inside DocuAgent.
 
-Your job is ONLY to understand the user's question and select one deterministic Python/SQLite tool.
+Today is {today}.
 
-Do not answer the question.
-Do not calculate totals yourself.
-Do not invent database values.
+Select exactly one deterministic Python or SQLite tool.
+
+Do not answer the user's question.
+Do not calculate database values.
+Do not invent missing information.
 
 Available tools:
 
 list_documents
-Use for:
-- show all documents
-- list saved documents
-Arguments:
-{{}}
+Arguments: {{}}
 
 filter_documents_by_type
-Use for:
-- show invoices
-- show receipts
 Arguments:
 {{
     "document_type": "invoice or receipt"
 }}
 
 filter_documents_by_date
-Use for:
-- documents between two exact dates
 Arguments:
 {{
     "start_date": "YYYY-MM-DD",
@@ -98,24 +715,18 @@ Arguments:
 }}
 
 filter_documents_by_party
-Use for:
-- documents from a supplier or merchant
 Arguments:
 {{
     "name": "supplier or merchant name"
 }}
 
 find_document_by_number
-Use for:
-- find a specific invoice or receipt number
 Arguments:
 {{
     "document_number": "number"
 }}
 
 filter_documents_by_amount
-Use for:
-- documents above, below or between amounts
 Arguments:
 {{
     "minimum_amount": number or null,
@@ -123,9 +734,6 @@ Arguments:
 }}
 
 total_spend
-Use for:
-- total spend
-- how much was spent
 Arguments:
 {{
     "start_date": "YYYY-MM-DD or null",
@@ -133,8 +741,6 @@ Arguments:
 }}
 
 total_tax
-Use for:
-- total tax
 Arguments:
 {{
     "start_date": "YYYY-MM-DD or null",
@@ -142,9 +748,6 @@ Arguments:
 }}
 
 average_document_value
-Use for:
-- average invoice value
-- average document value
 Arguments:
 {{
     "start_date": "YYYY-MM-DD or null",
@@ -152,58 +755,29 @@ Arguments:
 }}
 
 highest_value_documents
-Use for:
-- highest invoices
-- largest documents
-- most expensive documents
 Arguments:
 {{
     "limit": integer
 }}
 
 supplier_summary
-Use for:
-- most common suppliers
-- supplier summary
-- supplier spending
-Arguments:
-{{}}
+Arguments: {{}}
 
 invalid_documents
-Use for:
-- documents with validation problems
-- invalid documents
-Arguments:
-{{}}
+Arguments: {{}}
 
 duplicate_invoices
-Use for:
-- duplicate invoices
-- repeated invoice numbers
-Arguments:
-{{}}
+Arguments: {{}}
 
 detect_contradictions
-Use for:
-- contradictions
-- conflicting invoices
-- inconsistent totals, suppliers or dates
-Arguments:
-{{}}
+Arguments: {{}}
 
-Important:
-- Return JSON only.
-- Return exactly one tool.
-- Never invent missing arguments.
-- Use null when an optional value is unknown.
-- If the question cannot be handled, use tool_name = null.
-
-Required response format:
+Return JSON only:
 
 {{
     "tool_name": "tool name or null",
     "arguments": {{}},
-    "reason": "short explanation"
+    "reason": "short reason"
 }}
 
 User question:
@@ -212,12 +786,17 @@ User question:
 
 
 def select_zaki_tool(question):
-    if not isinstance(question, str):
+    if not isinstance(
+        question,
+        str,
+    ):
         return {
             "tool_name": None,
             "arguments": {},
-            "reason": "Question must be text.",
-            "error": "invalid_question",
+            "reason":
+                "Question must be text.",
+            "error":
+                "invalid_question",
         }
 
     question = question.strip()
@@ -226,50 +805,101 @@ def select_zaki_tool(question):
         return {
             "tool_name": None,
             "arguments": {},
-            "reason": "Question is empty.",
-            "error": "empty_question",
+            "reason":
+                "Question is empty.",
+            "error":
+                "empty_question",
         }
 
-    prompt = build_tool_selection_prompt(question)
+    fast_selection = (
+        deterministic_tool_selection(
+            question
+        )
+    )
 
-    response = ask_groq(prompt)
+    if fast_selection is not None:
+        return fast_selection
 
-    parsed = parse_json_response(response)
+    prompt = (
+        build_tool_selection_prompt(
+            question
+        )
+    )
 
-    if not isinstance(parsed, dict):
+    response = ask_groq(
+        prompt
+    )
+
+    parsed = parse_json_response(
+        response
+    )
+
+    if not isinstance(
+        parsed,
+        dict,
+    ):
         return {
             "tool_name": None,
             "arguments": {},
-            "reason": "Zaki could not understand the tool selection response.",
-            "error": "invalid_llm_response",
+            "reason": (
+                "Zaki could not understand "
+                "the tool selection response."
+            ),
+            "error":
+                "invalid_llm_response",
         }
 
-    tool_name = parsed.get("tool_name")
-    arguments = parsed.get("arguments", {})
-    reason = parsed.get("reason", "")
+    tool_name = parsed.get(
+        "tool_name"
+    )
+
+    arguments = parsed.get(
+        "arguments",
+        {},
+    )
+
+    reason = parsed.get(
+        "reason",
+        "",
+    )
 
     if tool_name is None:
         return {
             "tool_name": None,
             "arguments": {},
-            "reason": reason or "No suitable tool was found.",
-            "error": "unsupported_question",
+            "reason": (
+                reason
+                or "No suitable tool was found."
+            ),
+            "error":
+                "unsupported_question",
         }
 
     if tool_name not in ALLOWED_TOOLS:
         return {
             "tool_name": None,
             "arguments": {},
-            "reason": f"Tool '{tool_name}' is not allowed.",
-            "error": "invalid_tool",
+            "reason": (
+                f"Tool '{tool_name}' "
+                "is not allowed."
+            ),
+            "error":
+                "invalid_tool",
         }
 
-    if not isinstance(arguments, dict):
+    if not isinstance(
+        arguments,
+        dict,
+    ):
         arguments = {}
 
     return {
-        "tool_name": tool_name,
-        "arguments": arguments,
-        "reason": reason,
-        "error": None,
+        "tool_name":
+            tool_name,
+        "arguments":
+            arguments,
+        "reason":
+            reason,
+        "error":
+            None,
     }

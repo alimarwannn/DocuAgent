@@ -1,105 +1,182 @@
+from functools import lru_cache
+from pathlib import Path
+
 import cv2
-from src.logger import logger
 import easyocr
 
-reader = easyocr.Reader(["en"], gpu=False)
+from src.logger import logger
 
-def correct_rotation(image):
-    return cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
-def preprocess_image(image):
-    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    resized_image = cv2.resize(
-        gray_image,
-        None,
-        fx=1.5,
-        fy=1.5,
-        interpolation=cv2.INTER_CUBIC
+@lru_cache(maxsize=1)
+def get_ocr_reader():
+    logger.info(
+        "Loading EasyOCR model."
     )
 
-    # TODO: add rotation correction before returning the processed image
-    
-    return resized_image
+    return easyocr.Reader(
+        ["en"],
+        gpu=False,
+        verbose=False,
+    )
 
-    #blurred_image = cv2.GaussianBlur(
-     #   resized_image,
-      #  (5, 5),
-       # 0
-    #)
 
-    #threshold_image = cv2.adaptiveThreshold(
-     #   resized_image,
-      #  255,
-       # cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        #cv2.THRESH_BINARY,
-        #11,
-        #2
-    #)
+class LazyOCRReader:
+    def readtext(self, *args, **kwargs):
+        return get_ocr_reader().readtext(
+            *args,
+            **kwargs,
+        )
 
-    return resized_image
-    
 
-    
+reader = LazyOCRReader()
 
-def extract_text(image_path):
-    
-    image = cv2.imread(image_path)
 
-    if image is None: 
-        logger.error("The image could not be loaded.")
+def correct_rotation(image):
+    return cv2.rotate(
+        image,
+        cv2.ROTATE_90_COUNTERCLOCKWISE,
+    )
+
+
+def preprocess_image(image):
+    gray_image = cv2.cvtColor(
+        image,
+        cv2.COLOR_BGR2GRAY,
+    )
+
+    height, width = (
+        gray_image.shape[:2]
+    )
+
+    shortest_side = min(
+        height,
+        width,
+    )
+
+    if shortest_side < 1000:
+        gray_image = cv2.resize(
+            gray_image,
+            None,
+            fx=1.5,
+            fy=1.5,
+            interpolation=cv2.INTER_CUBIC,
+        )
+
+    return gray_image
+
+
+@lru_cache(maxsize=32)
+def _extract_text_cached(
+    image_path,
+    modified_time,
+):
+    image = cv2.imread(
+        image_path
+    )
+
+    if image is None:
+        logger.error(
+            "The image could not be loaded."
+        )
+
         return None
 
-    logger.info("Image loaded successfully.")
-    print(image.shape)
+    logger.info(
+        "Image loaded successfully."
+    )
 
-    gray_image = preprocess_image(image)
-    print(gray_image.shape)
-    logger.info("Grayscale conversion succeeded.")
+    processed_image = preprocess_image(
+        image
+    )
 
     try:
-        ocr_results = reader.readtext(gray_image)
-        logger.info("OCR completed successfully.")
+        ocr_results = reader.readtext(
+            processed_image,
+            detail=1,
+            paragraph=False,
+        )
+
+        logger.info(
+            "OCR completed successfully."
+        )
 
     except Exception as error:
-        logger.error(f"OCR failed: {error}")
+        logger.error(
+            f"OCR failed: {error}"
+        )
+
         return None
 
-    text_lines = []
-    for result in ocr_results:
-        bounding_box, text, confidence = result
-        text_lines.append(text)
-    raw_text = "\n".join(text_lines)
+    text_lines = [
+        detection[1]
+        for detection in ocr_results
+    ]
 
-    confidence_scores = []
-    high_confidence_lines = []
+    raw_text = "\n".join(
+        text_lines
+    )
+
+    confidence_scores = [
+        detection[2]
+        for detection in ocr_results
+    ]
 
     minimum_confidence = 0.50
 
-    for detection in ocr_results:
-        confidence = detection[2]
-        confidence_scores.append(confidence)
-        if confidence >= minimum_confidence:
-            high_confidence_lines.append(detection[1])    
-    high_confidence_text = "\n".join(high_confidence_lines)
+    high_confidence_lines = [
+        detection[1]
+        for detection in ocr_results
+        if detection[2]
+        >= minimum_confidence
+    ]
+
+    high_confidence_text = "\n".join(
+        high_confidence_lines
+    )
 
     if confidence_scores:
-        average_confidence = sum(confidence_scores) / len(confidence_scores)
+        average_confidence = (
+            sum(confidence_scores)
+            / len(confidence_scores)
+        )
     else:
         average_confidence = 0.0
 
-    ocr_output = {
+    return {
         "raw_text": raw_text,
         "detections": ocr_results,
         "line_count": len(text_lines),
         "image_path": image_path,
         "average_confidence": average_confidence,
-        "high_confidence_text": high_confidence_text
+        "high_confidence_text": high_confidence_text,
     }
 
 
-    
+def extract_text(image_path):
+    path = Path(
+        image_path
+    )
 
+    if not path.exists():
+        logger.error(
+            "The image path does not exist."
+        )
 
+        return None
 
-    return ocr_output
+    try:
+        modified_time = (
+            path.stat().st_mtime_ns
+        )
 
+    except OSError as error:
+        logger.error(
+            f"Could not inspect image: {error}"
+        )
+
+        return None
+
+    return _extract_text_cached(
+        str(path),
+        modified_time,
+    )

@@ -1,11 +1,355 @@
 import json
 
 from src.groq_client import ask_groq
-from src.zaki_executor import execute_zaki_tool
-from src.zaki_router import select_zaki_tool
+
+from src.zaki_executor import (
+    execute_zaki_tool,
+)
+
+from src.zaki_router import (
+    select_zaki_tool,
+)
 
 
-def build_grounded_answer_prompt(question, tool_name, tool_result):
+def _number(value):
+    try:
+        number = float(value)
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+        return str(value)
+
+    if number.is_integer():
+        return f"{int(number):,}"
+
+    return f"{number:,.2f}"
+
+
+def _references(documents):
+    if not documents:
+        return ""
+
+    references = [
+        f"#{document['id']}"
+        for document in documents[:5]
+        if document.get("id")
+        is not None
+    ]
+
+    if not references:
+        return ""
+
+    result = ", ".join(
+        references
+    )
+
+    if len(documents) > 5:
+        result += (
+            f" and "
+            f"{len(documents) - 5} more"
+        )
+
+    return result
+
+
+def format_deterministic_answer(
+    question,
+    tool_name,
+    result,
+):
+    if tool_name == "list_documents":
+        count = len(result)
+
+        if count == 0:
+            return (
+                "You don't have any saved "
+                "documents yet."
+            )
+
+        return (
+            f"You have {count} saved "
+            f"document{'s' if count != 1 else ''}."
+        )
+
+    if tool_name in {
+        "filter_documents_by_type",
+        "filter_documents_by_date",
+        "filter_documents_by_party",
+        "filter_documents_by_amount",
+    }:
+        count = len(result)
+
+        if count == 0:
+            return (
+                "I couldn't find any matching "
+                "documents."
+            )
+
+        refs = _references(
+            result
+        )
+
+        answer = (
+            f"I found {count} matching "
+            f"document{'s' if count != 1 else ''}."
+        )
+
+        if refs:
+            answer += (
+                f" References: {refs}."
+            )
+
+        return answer
+
+    if tool_name == (
+        "find_document_by_number"
+    ):
+        if not result:
+            return (
+                "I couldn't find a document "
+                "with that number."
+            )
+
+        refs = _references(
+            result
+        )
+
+        if len(result) == 1:
+            return (
+                f"I found it in document "
+                f"{refs}."
+            )
+
+        return (
+            f"I found {len(result)} matching "
+            f"documents: {refs}."
+        )
+
+    if tool_name == "total_spend":
+        total = _number(
+            result.get(
+                "total",
+                0,
+            )
+        )
+
+        count = result.get(
+            "document_count",
+            0,
+        )
+
+        return (
+            f"The total across "
+            f"{count} matching "
+            f"document{'s' if count != 1 else ''} "
+            f"is {total}."
+        )
+
+    if tool_name == "total_tax":
+        total = _number(
+            result.get(
+                "total_tax",
+                0,
+            )
+        )
+
+        count = result.get(
+            "document_count",
+            0,
+        )
+
+        return (
+            f"The total tax across "
+            f"{count} matching "
+            f"document{'s' if count != 1 else ''} "
+            f"is {total}."
+        )
+
+    if tool_name == (
+        "average_document_value"
+    ):
+        average = _number(
+            result.get(
+                "average",
+                0,
+            )
+        )
+
+        count = result.get(
+            "document_count",
+            0,
+        )
+
+        if count == 0:
+            return (
+                "There are no matching "
+                "documents to average."
+            )
+
+        return (
+            f"The average value across "
+            f"{count} matching documents "
+            f"is {average}."
+        )
+
+    if tool_name == (
+        "highest_value_documents"
+    ):
+        if not result:
+            return (
+                "I couldn't find any documents "
+                "with a recorded total."
+            )
+
+        lines = []
+
+        for document in result:
+            document_id = (
+                document.get("id")
+            )
+
+            total = _number(
+                document.get(
+                    "total",
+                    0,
+                )
+            )
+
+            lines.append(
+                f"#{document_id}: {total}"
+            )
+
+        return (
+            "The highest-value documents are "
+            + "; ".join(lines)
+            + "."
+        )
+
+    if tool_name == "supplier_summary":
+        if not result:
+            return (
+                "I couldn't find any supplier "
+                "information."
+            )
+
+        top = result[0]
+
+        supplier = top.get(
+            "supplier",
+            "Unknown supplier",
+        )
+
+        count = top.get(
+            "document_count",
+            0,
+        )
+
+        return (
+            f"{supplier} appears most often "
+            f"with {count} "
+            f"document{'s' if count != 1 else ''}."
+        )
+
+    if tool_name == "invalid_documents":
+        if not result:
+            return (
+                "I couldn't find any documents "
+                "with validation problems."
+            )
+
+        refs = _references(
+            result
+        )
+
+        return (
+            f"{len(result)} document"
+            f"{'s' if len(result) != 1 else ''} "
+            f"need attention. "
+            f"References: {refs}."
+        )
+
+    if tool_name == "duplicate_invoices":
+        if not result:
+            return (
+                "I couldn't find any duplicate "
+                "invoice numbers."
+            )
+
+        summaries = []
+
+        for duplicate in result[:5]:
+            summaries.append(
+                (
+                    f"{duplicate['invoice_number']} "
+                    f"({duplicate['occurrence_count']} times)"
+                )
+            )
+
+        answer = (
+            "I found duplicate invoice numbers: "
+            + ", ".join(
+                summaries
+            )
+            + "."
+        )
+
+        if len(result) > 5:
+            answer += (
+                f" There are "
+                f"{len(result) - 5} more."
+            )
+
+        return answer
+
+    if tool_name == (
+        "detect_contradictions"
+    ):
+        if not result:
+            return (
+                "I couldn't find any contradictions "
+                "between the saved invoices."
+            )
+
+        invoice_numbers = []
+
+        for contradiction in result:
+            invoice_number = (
+                contradiction.get(
+                    "invoice_number"
+                )
+            )
+
+            if (
+                invoice_number
+                and invoice_number
+                not in invoice_numbers
+            ):
+                invoice_numbers.append(
+                    invoice_number
+                )
+
+        preview = ", ".join(
+            invoice_numbers[:5]
+        )
+
+        return (
+            f"I found {len(result)} conflicting "
+            f"check{'s' if len(result) != 1 else ''} "
+            f"across invoice"
+            f"{'s' if len(invoice_numbers) != 1 else ''} "
+            f"{preview}."
+        )
+
+    return None
+
+
+def build_grounded_answer_prompt(
+    question,
+    tool_name,
+    tool_result,
+):
     result_json = json.dumps(
         tool_result,
         indent=2,
@@ -16,69 +360,107 @@ def build_grounded_answer_prompt(question, tool_name, tool_result):
     return f"""
 You are Zaki, the chatbot inside DocuAgent.
 
-Answer the user's question using ONLY the tool result provided below.
+Answer using ONLY the tool result below.
 
-Rules:
-- Do not invent values.
-- Do not use outside knowledge.
-- Do not perform new calculations if the tool result already contains the answer.
-- If the tool result is empty, clearly say that no matching documents were found.
-- If the tool failed, explain that the database query could not be completed.
-- Mention useful document IDs or filenames when available.
-- Keep the answer concise and clear.
+Do not invent values.
+Do not use outside knowledge.
+Keep the answer concise and user-friendly.
 
 User question:
 {question}
 
-Tool used:
+Tool:
 {tool_name}
 
-Tool result:
+Result:
 {result_json}
 
-Return only the final answer for the user.
+Return only the final answer.
 """
 
 
-def generate_grounded_answer(question, tool_execution):
-    if not tool_execution.get("success"):
+def generate_grounded_answer(
+    question,
+    tool_execution,
+):
+    if not tool_execution.get(
+        "success"
+    ):
         return (
-            "I couldn't complete that database query. "
-            f"Error: {tool_execution.get('error', 'unknown_error')}."
+            "I couldn't complete that "
+            "document request."
         )
 
-    prompt = build_grounded_answer_prompt(
-        question=question,
-        tool_name=tool_execution["tool_name"],
-        tool_result=tool_execution["result"],
+    tool_name = tool_execution[
+        "tool_name"
+    ]
+
+    tool_result = tool_execution[
+        "result"
+    ]
+
+    fast_answer = (
+        format_deterministic_answer(
+            question,
+            tool_name,
+            tool_result,
+        )
     )
 
-    response = ask_groq(prompt)
+    if fast_answer is not None:
+        return fast_answer
+
+    prompt = (
+        build_grounded_answer_prompt(
+            question=question,
+            tool_name=tool_name,
+            tool_result=tool_result,
+        )
+    )
+
+    response = ask_groq(
+        prompt
+    )
 
     if not response:
-        return "I found the data, but I couldn't generate a response."
+        return (
+            "I found the data, but I couldn't "
+            "prepare the response."
+        )
 
     return response.strip()
 
 
 def ask_zaki(question):
-    selection = select_zaki_tool(question)
+    selection = select_zaki_tool(
+        question
+    )
 
-    if selection.get("error"):
+    if selection.get(
+        "error"
+    ):
         return {
-            "question": question,
-            "tool_selection": selection,
-            "tool_execution": None,
+            "question":
+                question,
+            "tool_selection":
+                selection,
+            "tool_execution":
+                None,
             "answer": (
-                "I couldn't determine which document tool "
-                "should handle that question."
+                "I couldn't determine which "
+                "document operation should "
+                "handle that question."
             ),
-            "error": selection["error"],
+            "error":
+                selection["error"],
         }
 
     execution = execute_zaki_tool(
         selection["tool_name"],
-        selection.get("arguments", {}),
+        selection.get(
+            "arguments",
+            {},
+        ),
     )
 
     answer = generate_grounded_answer(
@@ -87,9 +469,16 @@ def ask_zaki(question):
     )
 
     return {
-        "question": question,
-        "tool_selection": selection,
-        "tool_execution": execution,
-        "answer": answer,
-        "error": execution.get("error"),
+        "question":
+            question,
+        "tool_selection":
+            selection,
+        "tool_execution":
+            execution,
+        "answer":
+            answer,
+        "error":
+            execution.get(
+                "error"
+            ),
     }
