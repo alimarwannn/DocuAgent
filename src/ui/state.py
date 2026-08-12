@@ -9,6 +9,7 @@ def initialize_state(session_state):
         "current_scan_options": None,
         "uploader_version": 0,
         "review_message": None,
+        "navigation_notice": None,
         "home_zaki_answer": None,
         "zaki_messages": [
             {

@@ -1,7 +1,12 @@
 from datetime import datetime
 from pathlib import Path
+import sys
 import shutil
 import sqlite3
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import src.database as database
 
@@ -15,6 +20,7 @@ from src.database import (
 
 DEMO_DATABASE = Path("data/docuagent.db")
 BACKUP_DIRECTORY = Path("data/backups")
+DEMO_DOCUMENT_DIRECTORY = Path("data/demo_documents")
 
 
 def backup_database():
@@ -90,6 +96,25 @@ def add_document(
         connection.close()
 
     return document_id
+
+
+def prepare_demo_images():
+    DEMO_DOCUMENT_DIRECTORY.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    image_map = {
+        "ojc-marketing-receipt.jpg": Path("img/demo_review.jpg"),
+        "vodafone-egypt-invoice.jpg": Path("img/demo_approved.jpg"),
+    }
+
+    for filename, source in image_map.items():
+        if source.exists():
+            shutil.copy2(
+                source,
+                DEMO_DOCUMENT_DIRECTORY / filename,
+            )
 
 
 def seed_demo_documents():
@@ -224,6 +249,7 @@ def summarize():
 def main():
     backup_path = backup_database()
     reset_database_file()
+    prepare_demo_images()
     seed_demo_documents()
     counts = summarize()
 
